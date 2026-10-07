@@ -8,7 +8,7 @@ import {
 import { createLocalBackup } from './lib/db';
 import { decodeBackup, encodeBackup } from './lib/backup';
 import { verifyAppPin } from './lib/appPin';
-import { ensureCloudUser } from './lib/session';
+import { clearPinUnlock, ensureCloudUser, isPinUnlockedForUser, savePinUnlock } from './lib/session';
 import { cloudLoadErrorMessage } from './lib/cloudError';
 import { deleteCloudClient, deleteCloudLogo, deleteCloudOption, deleteCloudTransaction, getCloudAttachment, importLocalBackup, loadCloudWorkspace, loadFontPreferences, permanentlyDeleteCloudTransaction, restoreCloudTransaction, saveCloudClient, saveCloudOption, saveCloudProjectSettings, saveFontPreferences, saveCloudTransaction, uploadCloudLogo } from './lib/cloudData';
 import { requireSupabase, supabase, supabaseConfigured } from './lib/supabase';
@@ -82,8 +82,10 @@ function App() {
     let active = true;
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       const nextUser = session?.user ?? null;
-      if (activeUserId.current !== (nextUser?.id ?? null)) setPinUnlocked(false);
-      activeUserId.current = nextUser?.id ?? null;
+      const nextUserId = nextUser?.id ?? null;
+      if (activeUserId.current && activeUserId.current !== nextUserId) clearPinUnlock(window.sessionStorage);
+      setPinUnlocked(isPinUnlockedForUser(nextUserId, window.sessionStorage));
+      activeUserId.current = nextUserId;
       setUser(nextUser);
     });
     setAuthReady(false);
@@ -94,7 +96,7 @@ function App() {
       const nextUser = data.session?.user ?? null;
       activeUserId.current = nextUser?.id ?? null;
       setUser(nextUser);
-      setPinUnlocked(false);
+      setPinUnlocked(isPinUnlockedForUser(nextUser?.id ?? null, window.sessionStorage));
       setAuthReady(true);
     }).catch(() => {
       if (active) { setSessionError(true); setAuthReady(true); }
@@ -105,15 +107,17 @@ function App() {
   if (!supabaseConfigured) return <SetupGate />;
   if (sessionError && !user) return <GateShell><h1>تعذر التحقق من الجلسة</h1><p>تحقق من الاتصال ثم أعد المحاولة.</p><button className="primary-button" onClick={() => { setAuthReady(false); setSessionRetry((value) => value + 1); }}>إعادة المحاولة</button></GateShell>;
   const unlock = async () => {
+    let nextUser = user;
     if (!user) {
-      const nextUser = await ensureCloudUser(requireSupabase().auth);
+      nextUser = await ensureCloudUser(requireSupabase().auth);
       activeUserId.current = nextUser.id;
       setUser(nextUser);
     }
+    if (nextUser) savePinUnlock(nextUser.id, window.sessionStorage);
     setPinUnlocked(true);
   };
   if (!pinUnlocked) return <PinGate onUnlock={unlock} />;
-  return <TrackerApp user={user!} onLock={() => setPinUnlocked(false)} />;
+  return <TrackerApp user={user!} onLock={() => { clearPinUnlock(window.sessionStorage); setPinUnlocked(false); }} />;
 }
 
 function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {

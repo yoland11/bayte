@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ensureCloudUser } from './session';
+import { clearPinUnlock, ensureCloudUser, isPinUnlockedForUser, savePinUnlock } from './session';
 
 describe('PIN-only cloud session', () => {
   it('reuses an existing Supabase session without creating another user', async () => {
@@ -32,5 +32,32 @@ describe('PIN-only cloud session', () => {
     };
 
     await expect(ensureCloudUser(auth)).rejects.toBe(authError);
+  });
+});
+
+describe('PIN unlock persistence', () => {
+  function createStorage() {
+    const values = new Map<string, string>();
+    return {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); },
+      removeItem: (key: string) => { values.delete(key); }
+    };
+  }
+
+  it('keeps the same user unlocked after a page refresh', () => {
+    const storage = createStorage();
+    savePinUnlock('user-1', storage);
+
+    expect(isPinUnlockedForUser('user-1', storage)).toBe(true);
+    expect(isPinUnlockedForUser('user-2', storage)).toBe(false);
+  });
+
+  it('clears persisted unlock when the user locks the system', () => {
+    const storage = createStorage();
+    savePinUnlock('user-1', storage);
+    clearPinUnlock(storage);
+
+    expect(isPinUnlockedForUser('user-1', storage)).toBe(false);
   });
 });
