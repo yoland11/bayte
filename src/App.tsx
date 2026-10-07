@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { createLocalBackup } from './lib/db';
 import { decodeBackup, encodeBackup } from './lib/backup';
+import { verifyAppPin } from './lib/appPin';
 import { deleteCloudClient, deleteCloudLogo, deleteCloudOption, deleteCloudTransaction, getCloudAttachment, importLocalBackup, loadCloudWorkspace, loadFontPreferences, permanentlyDeleteCloudTransaction, restoreCloudTransaction, saveCloudClient, saveCloudOption, saveCloudProjectSettings, saveFontPreferences, saveCloudTransaction, uploadCloudLogo } from './lib/cloudData';
 import { requireSupabase, supabase, supabaseConfigured } from './lib/supabase';
 import { formatAmount, formatCurrency, normalizeDigits, parseAmount, summarizeTransactions, sumAmounts } from './lib/money';
@@ -69,16 +70,24 @@ function AmountInput({ value, onChange, id = 'amount', onInputRef, invalid = fal
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [pinUnlocked, setPinUnlocked] = useState(false);
   const [authReady, setAuthReady] = useState(false);
+  const activeUserId = useRef<string | null>(null);
   useEffect(() => {
     if (!supabase) { setAuthReady(true); return; }
-    void supabase.auth.getSession().then(({ data }) => { setUser(data.session?.user ?? null); setAuthReady(true); });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => setUser(session?.user ?? null));
+    void supabase.auth.getSession().then(({ data }) => { const nextUser = data.session?.user ?? null; activeUserId.current = nextUser?.id ?? null; setUser(nextUser); setPinUnlocked(false); setAuthReady(true); });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const nextUser = session?.user ?? null;
+      if (activeUserId.current !== (nextUser?.id ?? null)) setPinUnlocked(false);
+      activeUserId.current = nextUser?.id ?? null;
+      setUser(nextUser);
+    });
     return () => listener.subscription.unsubscribe();
   }, []);
   if (!authReady) return <GateShell><p>جارٍ التحقق من الجلسة…</p></GateShell>;
   if (!supabaseConfigured) return <SetupGate />;
   if (!user) return <LoginGate />;
+  if (!pinUnlocked) return <PinGate onUnlock={() => setPinUnlocked(true)} onSignOut={() => void requireSupabase().auth.signOut()} />;
   return <TrackerApp user={user} />;
 }
 
@@ -359,6 +368,17 @@ function GateShell({ children }: { children: React.ReactNode }) {
   return <main className="auth-shell" dir="rtl"><section className="auth-card"><div className="auth-brand"><span className="brand-mark"><HardHat size={23} /></span><span><b>بيتي</b><small>متابعة بناء البيت</small></span></div>{children}</section></main>;
 }
 
+function PinGate({ onUnlock, onSignOut }: { onUnlock: () => void; onSignOut: () => void }) {
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState('');
+  function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!verifyAppPin(pin)) { setPin(''); setError('رمز PIN غير صحيح'); return; }
+    setError(''); onUnlock();
+  }
+  return <GateShell><h1>أدخل رمز PIN</h1><p>أدخل الرمز لفتح نظام بيتي على هذا الجهاز.</p><form className="auth-form" onSubmit={submit}><label>رمز PIN<input autoFocus type="password" inputMode="numeric" autoComplete="current-password" pattern="[0-9٠-٩۰-۹]{4}" maxLength={4} dir="ltr" value={pin} onChange={(event) => { setPin(normalizeDigits(event.target.value).replace(/\D/g, '').slice(0, 4)); setError(''); }} aria-invalid={!!error} required /></label>{error && <p className="error-banner" role="alert">{error}</p>}<button className="primary-button" type="submit" disabled={pin.length !== 4}>فتح النظام</button></form><button className="text-button" onClick={onSignOut}>تسجيل الخروج من الحساب</button></GateShell>;
+}
+
 async function downloadLocalBackup() {
   const backup = await createLocalBackup();
   const blob = new Blob([encodeBackup(backup)], { type: 'application/json;charset=utf-8' });
@@ -401,7 +421,7 @@ function LoginGate() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'تعذر إكمال تسجيل الدخول'); }
     finally { setBusy(false); }
   }
-  return <GateShell><h1>{isSignUp ? 'إنشاء حساب' : 'تسجيل الدخول'}</h1><p>{isSignUp ? 'أنشئ حساباً لحفظ بيانات بيتك ومتابعتها من أجهزتك.' : 'سجّل الدخول للوصول إلى بيانات حسابك السحابية.'}</p><form className="auth-form" onSubmit={(event) => void submit(event)}>{isSignUp && <label>الاسم<input autoComplete="name" value={fullName} onChange={(event) => setFullName(normalizeDigits(event.target.value))} required /></label>}<label>البريد الإلكتروني<input type="email" autoComplete="email" dir="ltr" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>كلمة المرور<input type="password" autoComplete={isSignUp ? 'new-password' : 'current-password'} minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} required /></label>{error && <p className={error.startsWith('تم إنشاء') ? 'gate-success' : 'error-banner'} role={error.startsWith('تم إنشاء') ? 'status' : 'alert'}>{error}</p>}<button className="primary-button" type="submit" disabled={busy}>{busy ? 'جارٍ الإرسال…' : isSignUp ? 'إنشاء الحساب' : 'دخول'}</button></form><button className="text-button" onClick={() => { setIsSignUp(!isSignUp); setError(''); }}>{isSignUp ? 'لديك حساب؟ سجّل الدخول' : 'إنشاء حساب جديد'}</button></GateShell>;
+  return <GateShell><h1>{isSignUp ? 'إنشاء حساب' : 'تسجيل الدخول'}</h1><p>{isSignUp ? 'أنشئ حساباً لحفظ بيانات بيتك ومتابعتها من أجهزتك.' : 'سجّل الدخول مرة واحدة لحسابك السحابي. بعد ذلك يفتح PIN النظام عند كل زيارة.'}</p><form className="auth-form" onSubmit={(event) => void submit(event)}>{isSignUp && <label>الاسم<input autoComplete="name" value={fullName} onChange={(event) => setFullName(normalizeDigits(event.target.value))} required /></label>}<label>البريد الإلكتروني<input type="email" autoComplete="email" dir="ltr" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>كلمة المرور<input type="password" autoComplete={isSignUp ? 'new-password' : 'current-password'} minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} required /></label>{error && <p className={error.startsWith('تم إنشاء') ? 'gate-success' : 'error-banner'} role={error.startsWith('تم إنشاء') ? 'status' : 'alert'}>{error}</p>}<button className="primary-button" type="submit" disabled={busy}>{busy ? 'جارٍ الإرسال…' : isSignUp ? 'إنشاء الحساب' : 'دخول'}</button></form><button className="text-button" onClick={() => { setIsSignUp(!isSignUp); setError(''); }}>{isSignUp ? 'لديك حساب؟ سجّل الدخول' : 'إنشاء حساب جديد'}</button></GateShell>;
 }
 
 function SummaryTile({ label, value, kind }: { label: string; value: number; kind: 'income' | 'expense' | 'balance' }) {
