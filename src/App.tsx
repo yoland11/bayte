@@ -8,6 +8,7 @@ import {
 import { createLocalBackup } from './lib/db';
 import { decodeBackup, encodeBackup } from './lib/backup';
 import { verifyAppPin } from './lib/appPin';
+import { ensureCloudUser } from './lib/session';
 import { deleteCloudClient, deleteCloudLogo, deleteCloudOption, deleteCloudTransaction, getCloudAttachment, importLocalBackup, loadCloudWorkspace, loadFontPreferences, permanentlyDeleteCloudTransaction, restoreCloudTransaction, saveCloudClient, saveCloudOption, saveCloudProjectSettings, saveFontPreferences, saveCloudTransaction, uploadCloudLogo } from './lib/cloudData';
 import { requireSupabase, supabase, supabaseConfigured } from './lib/supabase';
 import { formatAmount, formatCurrency, normalizeDigits, parseAmount, summarizeTransactions, sumAmounts } from './lib/money';
@@ -72,26 +73,49 @@ function App() {
   const [user, setUser] = useState<User | null>(null);
   const [pinUnlocked, setPinUnlocked] = useState(false);
   const [authReady, setAuthReady] = useState(false);
+  const [sessionError, setSessionError] = useState(false);
+  const [sessionRetry, setSessionRetry] = useState(0);
   const activeUserId = useRef<string | null>(null);
   useEffect(() => {
     if (!supabase) { setAuthReady(true); return; }
-    void supabase.auth.getSession().then(({ data }) => { const nextUser = data.session?.user ?? null; activeUserId.current = nextUser?.id ?? null; setUser(nextUser); setPinUnlocked(false); setAuthReady(true); });
+    let active = true;
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       const nextUser = session?.user ?? null;
       if (activeUserId.current !== (nextUser?.id ?? null)) setPinUnlocked(false);
       activeUserId.current = nextUser?.id ?? null;
       setUser(nextUser);
     });
-    return () => listener.subscription.unsubscribe();
-  }, []);
+    setAuthReady(false);
+    setSessionError(false);
+    void supabase.auth.getSession().then(({ data, error }) => {
+      if (!active) return;
+      if (error) { setSessionError(true); setAuthReady(true); return; }
+      const nextUser = data.session?.user ?? null;
+      activeUserId.current = nextUser?.id ?? null;
+      setUser(nextUser);
+      setPinUnlocked(false);
+      setAuthReady(true);
+    }).catch(() => {
+      if (active) { setSessionError(true); setAuthReady(true); }
+    });
+    return () => { active = false; listener.subscription.unsubscribe(); };
+  }, [sessionRetry]);
   if (!authReady) return <GateShell><p>جارٍ التحقق من الجلسة…</p></GateShell>;
   if (!supabaseConfigured) return <SetupGate />;
-  if (!user) return <LoginGate />;
-  if (!pinUnlocked) return <PinGate onUnlock={() => setPinUnlocked(true)} onSignOut={() => void requireSupabase().auth.signOut()} />;
-  return <TrackerApp user={user} />;
+  if (sessionError && !user) return <GateShell><h1>تعذر التحقق من الجلسة</h1><p>تحقق من الاتصال ثم أعد المحاولة.</p><button className="primary-button" onClick={() => { setAuthReady(false); setSessionRetry((value) => value + 1); }}>إعادة المحاولة</button></GateShell>;
+  const unlock = async () => {
+    if (!user) {
+      const nextUser = await ensureCloudUser(requireSupabase().auth);
+      activeUserId.current = nextUser.id;
+      setUser(nextUser);
+    }
+    setPinUnlocked(true);
+  };
+  if (!pinUnlocked) return <PinGate onUnlock={unlock} />;
+  return <TrackerApp user={user!} onLock={() => setPinUnlocked(false)} />;
 }
 
-function TrackerApp({ user }: { user: User }) {
+function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [trashedTransactions, setTrashedTransactions] = useState<Transaction[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -302,7 +326,7 @@ function TrackerApp({ user }: { user: User }) {
   const pageTitle = navItems.find((item) => item.id === page)?.label ?? 'الرئيسية';
 
   if (!dataLoaded && dataLoading) return <GateShell><p>جارٍ تحميل بيانات الحساب…</p></GateShell>;
-  if (dataError) return <GateShell><h1>تعذر الاتصال</h1><p>{dataError}</p><button className="primary-button" onClick={() => void refreshCloudData()}>إعادة المحاولة</button><button className="text-button" onClick={() => void requireSupabase().auth.signOut()}>تسجيل الخروج</button></GateShell>;
+  if (dataError) return <GateShell><h1>تعذر الاتصال</h1><p>{dataError}</p><button className="primary-button" onClick={() => void refreshCloudData()}>إعادة المحاولة</button><button className="text-button" onClick={onLock}>قفل النظام</button></GateShell>;
   return <div className="app-shell" style={{ '--font-primary': fontFamilyFor(fontPreferences.primary), '--font-secondary': fontFamilyFor(fontPreferences.secondary) } as React.CSSProperties}>
     <a className="skip-link" href="#main-content">انتقل إلى المحتوى</a>
     <aside className="sidebar">
@@ -354,7 +378,7 @@ function TrackerApp({ user }: { user: User }) {
         <section className="content-card report-periods"><div className="section-header"><div><h2>حركة الفترة المحددة</h2><p>{reportLabel}</p></div></div><div className="period-totals"><div><span className="period-dot income-dot" />القبض في الفترة<strong>{formatCurrency(summarizeTransactions(reportTransactions).income)}</strong></div><div><span className="period-dot expense-dot" />الصرف في الفترة<strong>{formatCurrency(summarizeTransactions(reportTransactions).expenses)}</strong></div></div></section>
       </section>}
 
-      {page === 'settings' && <SettingsPage categories={categories} stages={stages} transactions={[...transactions, ...trashedTransactions]} clients={clients} projectName={projectName} logoUrl={logoUrl} dashboardOrder={dashboardOrder} dashboardSize={dashboardSize} onToast={setToast} fontPreferences={fontPreferences} onFontPreferenceChange={changeFontPreference} user={user} projectId={projectId} onRefresh={refreshCloudData} onProjectName={setProjectName} onLogo={setLogoUrl} onDashboardOrder={setDashboardOrder} onDashboardSize={setDashboardSize} />}
+      {page === 'settings' && <SettingsPage categories={categories} stages={stages} transactions={[...transactions, ...trashedTransactions]} clients={clients} projectName={projectName} logoUrl={logoUrl} dashboardOrder={dashboardOrder} dashboardSize={dashboardSize} onToast={setToast} fontPreferences={fontPreferences} onFontPreferenceChange={changeFontPreference} user={user} projectId={projectId} onRefresh={refreshCloudData} onProjectName={setProjectName} onLogo={setLogoUrl} onDashboardOrder={setDashboardOrder} onDashboardSize={setDashboardSize} onLock={onLock} />}
       <footer className="app-footer">بيتي <span>·</span> متابعة أموال بناء البيت</footer>
     </main>
 
@@ -368,15 +392,24 @@ function GateShell({ children }: { children: React.ReactNode }) {
   return <main className="auth-shell" dir="rtl"><section className="auth-card"><div className="auth-brand"><span className="brand-mark"><HardHat size={23} /></span><span><b>بيتي</b><small>متابعة بناء البيت</small></span></div>{children}</section></main>;
 }
 
-function PinGate({ onUnlock, onSignOut }: { onUnlock: () => void; onSignOut: () => void }) {
+function PinGate({ onUnlock }: { onUnlock: () => Promise<void> }) {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
-  function submit(event: React.FormEvent) {
+  const [busy, setBusy] = useState(false);
+  async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!verifyAppPin(pin)) { setPin(''); setError('رمز PIN غير صحيح'); return; }
-    setError(''); onUnlock();
+    setBusy(true); setError('');
+    try { await onUnlock(); }
+    catch (cause) {
+      const message = cause instanceof Error ? cause.message.toLowerCase() : '';
+      setError(/anonymous|sign.?up|disabled|not enabled|not allowed/.test(message)
+        ? 'فعّل خيار الجلسات المجهولة في إعدادات Authentication بمشروع Supabase.'
+        : 'تعذر تهيئة جلسة النظام. تحقق من الاتصال ثم أعد المحاولة.');
+      setPin('');
+    } finally { setBusy(false); }
   }
-  return <GateShell><h1>أدخل رمز PIN</h1><p>أدخل الرمز لفتح نظام بيتي على هذا الجهاز.</p><form className="auth-form" onSubmit={submit}><label>رمز PIN<input autoFocus type="password" inputMode="numeric" autoComplete="current-password" pattern="[0-9٠-٩۰-۹]{4}" maxLength={4} dir="ltr" value={pin} onChange={(event) => { setPin(normalizeDigits(event.target.value).replace(/\D/g, '').slice(0, 4)); setError(''); }} aria-invalid={!!error} required /></label>{error && <p className="error-banner" role="alert">{error}</p>}<button className="primary-button" type="submit" disabled={pin.length !== 4}>فتح النظام</button></form><button className="text-button" onClick={onSignOut}>تسجيل الخروج من الحساب</button></GateShell>;
+  return <GateShell><h1>أدخل رمز PIN</h1><p>أدخل الرمز لفتح نظام بيتي على هذا الجهاز.</p><form className="auth-form" onSubmit={(event) => void submit(event)}><label>رمز PIN<input autoFocus type="password" inputMode="numeric" autoComplete="current-password" pattern="[0-9٠-٩۰-۹]{4}" maxLength={4} dir="ltr" value={pin} onChange={(event) => { setPin(normalizeDigits(event.target.value).replace(/\D/g, '').slice(0, 4)); setError(''); }} aria-invalid={!!error} required /></label>{error && <p className="error-banner" role="alert">{error}</p>}<button className="primary-button" type="submit" disabled={pin.length !== 4 || busy}>{busy ? 'جارٍ فتح النظام…' : 'فتح النظام'}</button></form></GateShell>;
 }
 
 async function downloadLocalBackup() {
@@ -396,32 +429,7 @@ function SetupGate() {
     catch { setMessage('تعذر إنشاء النسخة الاحتياطية من بيانات هذا المتصفح.'); }
     finally { setBusy(false); }
   }
-  return <GateShell><h1>إعداد الاتصال السحابي</h1><p>أضف بيانات مشروع Supabase لتفعيل الدخول وحفظ البيانات على الإنترنت.</p><div className="setup-code"><code>VITE_SUPABASE_URL</code><code>VITE_SUPABASE_PUBLISHABLE_KEY</code></div><p className="gate-hint">ضع القيم في ملف <bdi dir="ltr">.env.local</bdi> محلياً أو في Environment Variables على Vercel، ثم أعد تشغيل التطبيق.</p><button className="secondary-button" onClick={() => void backup()} disabled={busy}><Download size={16} />{busy ? 'جارٍ إنشاء النسخة…' : 'تنزيل نسخة احتياطية من هذا المتصفح'}</button>{message && <p role="status">{message}</p>}</GateShell>;
-}
-
-function LoginGate() {
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  async function submit(event: React.FormEvent) {
-    event.preventDefault(); setBusy(true); setError('');
-    try {
-      const auth = requireSupabase().auth;
-      if (isSignUp) {
-        const { data, error: signupError } = await auth.signUp({ email: email.trim(), password, options: { data: { full_name: normalizeDigits(fullName.trim()) } } });
-        if (signupError) throw signupError;
-        if (!data.session) setError('تم إنشاء الحساب. تحقق من بريدك الإلكتروني لتأكيده ثم سجّل الدخول.');
-      } else {
-        const { error: loginError } = await auth.signInWithPassword({ email: email.trim(), password });
-        if (loginError) throw loginError;
-      }
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'تعذر إكمال تسجيل الدخول'); }
-    finally { setBusy(false); }
-  }
-  return <GateShell><h1>{isSignUp ? 'إنشاء حساب' : 'تسجيل الدخول'}</h1><p>{isSignUp ? 'أنشئ حساباً لحفظ بيانات بيتك ومتابعتها من أجهزتك.' : 'سجّل الدخول مرة واحدة لحسابك السحابي. بعد ذلك يفتح PIN النظام عند كل زيارة.'}</p><form className="auth-form" onSubmit={(event) => void submit(event)}>{isSignUp && <label>الاسم<input autoComplete="name" value={fullName} onChange={(event) => setFullName(normalizeDigits(event.target.value))} required /></label>}<label>البريد الإلكتروني<input type="email" autoComplete="email" dir="ltr" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>كلمة المرور<input type="password" autoComplete={isSignUp ? 'new-password' : 'current-password'} minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} required /></label>{error && <p className={error.startsWith('تم إنشاء') ? 'gate-success' : 'error-banner'} role={error.startsWith('تم إنشاء') ? 'status' : 'alert'}>{error}</p>}<button className="primary-button" type="submit" disabled={busy}>{busy ? 'جارٍ الإرسال…' : isSignUp ? 'إنشاء الحساب' : 'دخول'}</button></form><button className="text-button" onClick={() => { setIsSignUp(!isSignUp); setError(''); }}>{isSignUp ? 'لديك حساب؟ سجّل الدخول' : 'إنشاء حساب جديد'}</button></GateShell>;
+  return <GateShell><h1>إعداد الاتصال السحابي</h1><p>أضف بيانات مشروع Supabase لحفظ البيانات على الإنترنت.</p><div className="setup-code"><code>VITE_SUPABASE_URL</code><code>VITE_SUPABASE_PUBLISHABLE_KEY</code></div><p className="gate-hint">ضع القيم في ملف <bdi dir="ltr">.env.local</bdi> محلياً أو في Environment Variables على Vercel، ثم أعد تشغيل التطبيق.</p><button className="secondary-button" onClick={() => void backup()} disabled={busy}><Download size={16} />{busy ? 'جارٍ إنشاء النسخة…' : 'تنزيل نسخة احتياطية من هذا المتصفح'}</button>{message && <p role="status">{message}</p>}</GateShell>;
 }
 
 function SummaryTile({ label, value, kind }: { label: string; value: number; kind: 'income' | 'expense' | 'balance' }) {
@@ -559,7 +567,7 @@ function TransactionDialog({ mode, record, initialType, categories, stages, clie
 
 function DetailItem({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) { return <div className={`detail-item ${wide ? 'wide' : ''}`}><span>{label}</span><b>{value}</b></div>; }
 
-function SettingsPage({ categories, stages, transactions, clients, projectName, logoUrl, dashboardOrder, dashboardSize, onToast, fontPreferences, onFontPreferenceChange, user, projectId, onRefresh, onProjectName, onLogo, onDashboardOrder, onDashboardSize }: { categories: NamedOption[]; stages: NamedOption[]; transactions: Transaction[]; clients: Client[]; projectName: string; logoUrl: string | null; dashboardOrder: DashboardCard[]; dashboardSize: 'compact' | 'normal' | 'large'; onToast: (message: string) => void; fontPreferences: FontPreferences; onFontPreferenceChange: (role: keyof FontPreferences, font: FontStyleId) => void; user: User; projectId: string; onRefresh: () => Promise<void>; onProjectName: (name: string) => void; onLogo: (url: string | null) => void; onDashboardOrder: (order: DashboardCard[]) => void; onDashboardSize: (size: 'compact' | 'normal' | 'large') => void }) {
+function SettingsPage({ categories, stages, transactions, clients, projectName, logoUrl, dashboardOrder, dashboardSize, onToast, fontPreferences, onFontPreferenceChange, user, projectId, onRefresh, onProjectName, onLogo, onDashboardOrder, onDashboardSize, onLock }: { categories: NamedOption[]; stages: NamedOption[]; transactions: Transaction[]; clients: Client[]; projectName: string; logoUrl: string | null; dashboardOrder: DashboardCard[]; dashboardSize: 'compact' | 'normal' | 'large'; onToast: (message: string) => void; fontPreferences: FontPreferences; onFontPreferenceChange: (role: keyof FontPreferences, font: FontStyleId) => void; user: User; projectId: string; onRefresh: () => Promise<void>; onProjectName: (name: string) => void; onLogo: (url: string | null) => void; onDashboardOrder: (order: DashboardCard[]) => void; onDashboardSize: (size: 'compact' | 'normal' | 'large') => void; onLock: () => void }) {
   const [newCategory, setNewCategory] = useState('');
   const [newStage, setNewStage] = useState('');
   const [backupReady, setBackupReady] = useState(false);
@@ -614,12 +622,12 @@ function SettingsPage({ categories, stages, transactions, clients, projectName, 
       console.error(error); setMigrationMessage(error instanceof Error ? `تعذر إكمال النقل: ${error.message}` : 'تعذر قراءة النسخة أو نقلها.');
     } finally { setMigrationBusy(false); if (backupFileRef.current) backupFileRef.current.value = ''; }
   }
-  return <section className="page-content settings-page"><div className="page-heading"><div><p className="eyebrow">تهيئة التطبيق</p><h1>الإعدادات</h1><p className="page-subtitle">تحكم بالنظام والعملاء والتصنيفات ومراحل البناء</p></div><button className="secondary-button" onClick={() => void requireSupabase().auth.signOut()}>تسجيل الخروج</button></div>
+  return <section className="page-content settings-page"><div className="page-heading"><div><p className="eyebrow">تهيئة التطبيق</p><h1>الإعدادات</h1><p className="page-subtitle">تحكم بالنظام والعملاء والتصنيفات ومراحل البناء</p></div><button className="secondary-button" onClick={onLock}>قفل النظام</button></div>
     <SystemSettingsPanel projectId={projectId} user={user} projectName={projectName} logoUrl={logoUrl} dashboardOrder={dashboardOrder} dashboardSize={dashboardSize} onToast={onToast} onRefresh={onRefresh} onProjectName={onProjectName} onLogo={onLogo} onDashboardOrder={onDashboardOrder} onDashboardSize={onDashboardSize} />
     <section className="content-card client-settings"><div className="section-header"><div className="settings-title"><Users size={19} /><div><h2>العملاء</h2><p>بيانات العملاء المرتبطة بكشف الحساب والعمليات</p></div></div><span className="item-count">{formatAmount(clients.length)}</span></div><ClientManager clients={clients} transactions={transactions} user={user} projectId={projectId} onToast={onToast} onRefresh={onRefresh} /></section>
     <div className="settings-grid"><SettingsGroup title="التصنيفات" description="تصنيفات المصاريف المستخدمة" icon={<ReceiptText size={18} />} items={categories} kind="category" newValue={newCategory} onValue={setNewCategory} onAdd={() => void addOption('category')} onRename={renameOption} onDelete={deleteOption} /><SettingsGroup title="مراحل البناء" description="مراحل تنفيذ البيت" icon={<HardHat size={18} />} items={stages} kind="stage" newValue={newStage} onValue={setNewStage} onAdd={() => void addOption('stage')} onRename={renameOption} onDelete={deleteOption} /></div>
     <section className="font-settings-section" aria-labelledby="font-settings-title"><div className="section-header"><div><h2 id="font-settings-title">التحكم بالخطوط</h2><p>اختر خطاً مستقلاً للعناوين وللنصوص المساندة</p></div><span className="font-section-icon" aria-hidden="true">Aa</span></div><div className="font-settings-grid"><FontPicker role="primary" title="النصوص الرئيسية" description="العناوين والأسماء البارزة" value={fontPreferences.primary} onChange={(font) => onFontPreferenceChange('primary', font)} /><FontPicker role="secondary" title="النصوص الثانوية" description="النصوص والوصف والقوائم" value={fontPreferences.secondary} onChange={(font) => onFontPreferenceChange('secondary', font)} /></div><p className="font-note">تعرض المعاينة نماذج رقمية قريبة من أسماء الخطوط التقليدية، وقد يختلف رسم بعض الخطوط عن النسخ الخطية الأصلية.</p></section>
-    <div className="local-data-note"><span><Wallet size={18} /></span><div><b>نقل البيانات المحلية إلى الحساب السحابي</b><p>نزّل نسخة JSON تشمل العمليات والتصنيفات والمراحل والمرفقات، ثم استوردها. تبقى بيانات المتصفح محفوظة بعد النقل.</p><div className="migration-actions"><button className="secondary-button" onClick={() => void createBackup()} disabled={migrationBusy}><Download size={16} />تنزيل النسخة الاحتياطية</button><input ref={backupFileRef} type="file" accept="application/json,.json" onChange={(event) => void importBackup(event.target.files?.[0])} disabled={migrationBusy} aria-label="اختيار نسخة احتياطية للاستيراد" /><button className="primary-button" onClick={() => backupFileRef.current?.click()} disabled={migrationBusy || !backupReady}>استيراد النسخة إلى الحساب</button></div>{migrationMessage && <p role="status">{migrationMessage}</p>}</div></div><p className="gate-hint">الحساب: <bdi dir="ltr">{user.email}</bdi> · البيانات الحالية محفوظة في Supabase.</p></section>;
+    <div className="local-data-note"><span><Wallet size={18} /></span><div><b>نقل البيانات المحلية إلى الحساب السحابي</b><p>نزّل نسخة JSON تشمل العمليات والتصنيفات والمراحل والمرفقات، ثم استوردها. تبقى بيانات المتصفح محفوظة بعد النقل.</p><div className="migration-actions"><button className="secondary-button" onClick={() => void createBackup()} disabled={migrationBusy}><Download size={16} />تنزيل النسخة الاحتياطية</button><input ref={backupFileRef} type="file" accept="application/json,.json" onChange={(event) => void importBackup(event.target.files?.[0])} disabled={migrationBusy} aria-label="اختيار نسخة احتياطية للاستيراد" /><button className="primary-button" onClick={() => backupFileRef.current?.click()} disabled={migrationBusy || !backupReady}>استيراد النسخة إلى الحساب</button></div>{migrationMessage && <p role="status">{migrationMessage}</p>}</div></div><p className="gate-hint">الحساب: <bdi dir="ltr">{user.is_anonymous ? 'جلسة PIN لهذا الجهاز' : user.email ?? 'حساب مرتبط'}</bdi> · البيانات الحالية محفوظة في Supabase.</p></section>;
 }
 
 function SystemSettingsPanel({ projectId, user, projectName, logoUrl, dashboardOrder, dashboardSize, onToast, onRefresh, onProjectName, onLogo, onDashboardOrder, onDashboardSize }: {
