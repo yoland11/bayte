@@ -37,12 +37,17 @@ VITE_SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY
 
 ## قاعدة البيانات والأمان
 
-Migration: `supabase/migrations/20261007000100_bayti_cloud.sql`.
+Migrations are applied in order from `supabase/migrations/`:
+
+- `20261007000100_bayti_cloud.sql` creates the initial cloud schema and owner policies.
+- `20261008000100_bayti_clients_trash_settings.sql` adds client records and statements, recoverable transaction deletion, logo storage, and dashboard preferences. It is additive and keeps existing transactions.
 
 - الجداول: `profiles`, `projects`, `transactions`, `categories`, `construction_stages`, `attachments`.
 - كل جدول يفعّل RLS، وتقتصر القراءة والكتابة على `auth.uid() = user_id`.
 - المفاتيح الأجنبية المركبة تربط السجل بالمشروع والمالك نفسه.
 - Bucket `transaction-attachments` خاص، يسمح بالصور وPDF حتى 10 ميغابايت، وسياسة التخزين تقصر مسار الملف على مجلد صاحب الحساب.
+- العملاء وكشوف الحساب مرتبطة بمعرف المالك والمشروع نفسه. الحذف العادي ينقل العملية إلى المهملات، والاستعادة تعيدها إلى الأرصدة؛ الحذف النهائي من المهملات يحذف المرفق المرتبط أيضاً.
+- شعار النظام محفوظ في Bucket خاص، وحجم بطاقات الرئيسية وترتيبها محفوظان في إعدادات المشروع.
 - لا توجد مفاتيح خادم أو صلاحيات `service_role` في المتصفح.
 
 ## نقل بيانات المتصفح
@@ -57,7 +62,7 @@ Migration: `supabase/migrations/20261007000100_bayti_cloud.sql`.
 
 ## Vercel
 
-اربط المستودع في Vercel واختر Vite؛ إعدادات البناء الافتراضية هي `npm run build` ومجلد الإخراج `dist`. أضف `VITE_SUPABASE_URL` و`VITE_SUPABASE_PUBLISHABLE_KEY` إلى Environment Variables في بيئات Preview وProduction، ثم انشر. أضف عنوان النشر إلى روابط Supabase المسموحة للبريد الإلكتروني.
+راجع [دليل إعداد Vercel](./VERCEL_SETUP.md) لربط GitHub، إعداد Vite، إضافة متغيرات Supabase العامة، وضبط روابط Auth.
 
 ## الاختبارات
 

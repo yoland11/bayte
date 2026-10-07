@@ -16,16 +16,19 @@ export interface PdfReportData {
   period: string;
   records: PdfReportRow[];
   sums: Summary;
+  expenseByCategory?: { name: string; amount: number }[];
+  expenseByStage?: { name: string; amount: number }[];
 }
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character] ?? character));
 }
 
-export function buildPdfReportHtml({ fileDate, period, records, sums }: PdfReportData): string {
+export function buildPdfReportHtml({ fileDate, period, records, sums, expenseByCategory = [], expenseByStage = [] }: PdfReportData): string {
   const tableRows = records.length
     ? records.map((row, index) => `<tr><td class="pdf-index">${formatAmount(index + 1)}</td><td><span class="pdf-type ${row.type}">${row.type === 'income' ? 'قبض' : 'صرف'}</span></td><td class="pdf-description">${escapeHtml(row.description)}</td><td class="pdf-amount">${formatCurrency(row.amount)}</td><td class="pdf-date-cell">${escapeHtml(row.date)}</td><td>${escapeHtml(row.category)}</td><td>${escapeHtml(row.stage)}</td><td>${escapeHtml(row.person)}</td></tr>`).join('')
     : '<tr class="pdf-empty-row"><td colspan="8">لا توجد عمليات ضمن الفترة المحددة</td></tr>';
+  const breakdown = (title: string, rows: { name: string; amount: number }[]) => rows.length ? `<section class="pdf-breakdown"><h2>${title}</h2><table><thead><tr><th>الاسم</th><th>إجمالي الصرف</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${escapeHtml(row.name)}</td><td class="pdf-amount">${formatCurrency(row.amount)}</td></tr>`).join('')}</tbody></table></section>` : '';
 
   return `<div class="pdf-report" dir="rtl">
     <header class="pdf-report-header">
@@ -45,6 +48,7 @@ export function buildPdfReportHtml({ fileDate, period, records, sums }: PdfRepor
       <div class="pdf-table-heading"><h2>تفاصيل العمليات</h2><span>سجل مالي مرتب حسب التاريخ</span></div>
       <table><thead><tr><th>م</th><th>النوع</th><th>البيان</th><th>المبلغ</th><th>التاريخ</th><th>التصنيف</th><th>المرحلة</th><th>المورد / الشخص</th></tr></thead><tbody>${tableRows}</tbody></table>
     </section>
+    ${(expenseByCategory.length || expenseByStage.length) ? `<section class="pdf-breakdown-grid">${breakdown('الصرف حسب التصنيف', expenseByCategory)}${breakdown('الصرف حسب مرحلة البناء', expenseByStage)}</section>` : ''}
     <footer>بيتي <span>·</span> تقرير متابعة بناء البيت</footer>
   </div>`;
 }

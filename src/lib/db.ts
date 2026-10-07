@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type { NamedOption, StoredAttachment, Transaction } from './types';
+import { blobToBase64, type BaytiBackup } from './backup';
 
 class BaytiDatabase extends Dexie {
   transactions!: EntityTable<Transaction, 'id'>;
@@ -62,3 +63,16 @@ export async function deleteTransaction(id: string): Promise<void> {
   });
 }
 
+export async function createLocalBackup(): Promise<BaytiBackup> {
+  const [transactions, categories, stages, attachments] = await Promise.all([
+    db.transactions.toArray(), db.categories.toArray(), db.stages.toArray(), db.attachments.toArray()
+  ]);
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    transactions,
+    categories,
+    stages,
+    attachments: await Promise.all(attachments.map(async ({ blob, ...attachment }) => ({ ...attachment, data: await blobToBase64(blob) })))
+  };
+}

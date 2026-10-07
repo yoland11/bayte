@@ -8,6 +8,7 @@ export interface Transaction {
   date: string;
   categoryId?: string;
   stageId?: string;
+  clientId?: string;
   person?: string;
   notes?: string;
   attachmentId?: string;
@@ -18,6 +19,15 @@ export interface Transaction {
 export interface NamedOption {
   id: string;
   name: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Client {
+  id: string;
+  name: string;
+  phone: string;
+  profession: string;
   createdAt: number;
   updatedAt: number;
 }

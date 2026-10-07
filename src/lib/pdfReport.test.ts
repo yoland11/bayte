@@ -25,4 +25,11 @@ describe('PDF report layout', () => {
     expect(populatedHtml).toContain('&lt;شراء حديد&gt;');
     expect(emptyHtml).toContain('لا توجد عمليات ضمن الفترة المحددة');
   });
+
+  it('includes expense breakdowns by category and construction stage when provided', () => {
+    const html = buildPdfReportHtml({ ...example, expenseByCategory: [{ name: 'حديد', amount: 1250 }], expenseByStage: [{ name: 'الأساس', amount: 1250 }] });
+    expect(html).toContain('الصرف حسب التصنيف');
+    expect(html).toContain('الصرف حسب مرحلة البناء');
+    expect(html).toContain('1,250 د.ع');
+  });
 });

@@ -10,6 +10,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.3",
     "@vitejs/plugin-react": "latest",
     "dexie": "^4.0.11",
     "dexie-react-hooks": "^4.4.0",
