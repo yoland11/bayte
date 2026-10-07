@@ -29,12 +29,13 @@ const toOption = (row: OptionRow): NamedOption => ({ id: row.id, name: row.name,
 
 async function checked<T>(promise: PromiseLike<{ data: T; error: { message: string } | null }>): Promise<T> {
   const { data, error } = await promise;
-  if (error) throw new Error(error.message);
+  if (error) throw error;
   return data;
 }
 
 export async function loadCloudWorkspace(user: User): Promise<CloudWorkspace> {
   const client = requireSupabase();
+  await checked(client.rpc('ensure_bayti_workspace'));
   const projects = await checked(client.from('projects').select('id,name,logo_path,settings').eq('user_id', user.id).order('created_at').limit(1));
   const project = (projects as ProjectRow[])[0];
   const projectId = project?.id;

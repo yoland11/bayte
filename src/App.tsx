@@ -9,6 +9,7 @@ import { createLocalBackup } from './lib/db';
 import { decodeBackup, encodeBackup } from './lib/backup';
 import { verifyAppPin } from './lib/appPin';
 import { ensureCloudUser } from './lib/session';
+import { cloudLoadErrorMessage } from './lib/cloudError';
 import { deleteCloudClient, deleteCloudLogo, deleteCloudOption, deleteCloudTransaction, getCloudAttachment, importLocalBackup, loadCloudWorkspace, loadFontPreferences, permanentlyDeleteCloudTransaction, restoreCloudTransaction, saveCloudClient, saveCloudOption, saveCloudProjectSettings, saveFontPreferences, saveCloudTransaction, uploadCloudLogo } from './lib/cloudData';
 import { requireSupabase, supabase, supabaseConfigured } from './lib/supabase';
 import { formatAmount, formatCurrency, normalizeDigits, parseAmount, summarizeTransactions, sumAmounts } from './lib/money';
@@ -137,7 +138,7 @@ function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
       setProjectId(data.projectId); setTransactions(data.transactions); setTrashedTransactions(data.trashedTransactions); setClients(data.clients); setCategories(data.categories); setStages(data.stages);
       setProjectName(data.projectName); setLogoUrl(data.logoUrl); setDashboardOrder(arrangeDashboardCards(data.dashboardOrder, ['balance', 'income', 'expense'])); setDashboardSize(data.dashboardSize);
     } catch (error) {
-      console.error(error); setDataError('تعذر تحميل بيانات الحساب. تحقق من الاتصال وإعداد قاعدة البيانات ثم أعد المحاولة.');
+      console.error(error); setDataError(cloudLoadErrorMessage(error));
     } finally { setDataLoading(false); setDataLoaded(true); }
   };
   useEffect(() => { void refreshCloudData(); }, [user.id]);
