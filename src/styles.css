@@ -65,8 +65,8 @@ button, select { cursor: pointer; }
 .breadcrumbs strong { color: #243b53; font-weight: 500; }
 .crumb-separator { color: #bdc8d3; }
 .topbar-actions { display: flex; align-items: center; gap: 14px; }
-.today-chip { display: flex; align-items: center; gap: 7px; color: #728195; font-size: 11px; }
-.primary-button, .secondary-button, .outline-button, .danger-outline { display: inline-flex; justify-content: center; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border: 1px solid transparent; border-radius: var(--radius-control); font-size: 12px; font-weight: 500; text-decoration: none; transition: background-color .15s, border-color .15s, color .15s, transform .15s; white-space: nowrap; }
+.today-chip { display: flex; align-items: center; gap: 7px; color: #728195; font-size: 12px; }
+.primary-button, .secondary-button, .outline-button, .danger-outline { display: inline-flex; justify-content: center; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border: 1px solid transparent; border-radius: var(--radius-control); font-size: 13px; font-weight: 500; text-decoration: none; transition: background-color .15s, border-color .15s, color .15s, transform .15s; white-space: nowrap; }
 .primary-button { color: #fff; background: var(--primary); }
 .primary-button:hover:not(:disabled) { background: var(--primary-hover); }
 .primary-button:active:not(:disabled), .secondary-button:active:not(:disabled) { transform: scale(.98); }
@@ -79,8 +79,8 @@ button, select { cursor: pointer; }
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 24px; }
 .page-heading h1 { margin: 0; color: #1a3046; font-size: 24px; line-height: 1.35; font-weight: 600; letter-spacing: -.025em; }
 .page-heading h1, .section-header h2, .dialog-head h2, .brand b { font-family: var(--font-primary); }
-.eyebrow { margin: 0 0 5px; color: #68829a; font-size: 11px; font-weight: 500; }
-.page-subtitle { margin: 5px 0 0; color: #8190a1; font-size: 12px; }
+.eyebrow { margin: 0 0 5px; color: #68829a; font-size: 12px; font-weight: 500; }
+.page-subtitle { margin: 5px 0 0; color: #8190a1; font-size: 14px; line-height: 1.6; }
 .summary-grid { display: grid; grid-template-columns: minmax(0,1.55fr) repeat(2,minmax(0,.8fr)); gap: 16px; margin-bottom: 22px; }
 .summary-grid.card-size-compact { gap: 11px; }
 .summary-grid.card-size-compact .balance-card, .summary-grid.card-size-compact .metric-card { min-height: 145px; padding: 15px; }
@@ -110,31 +110,31 @@ button, select { cursor: pointer; }
 .content-card { min-width: 0; overflow: hidden; border: 1px solid #e2e8ef; border-radius: var(--radius-card); background: #fff; box-shadow: var(--shadow); }
 .recent-card { margin-bottom: 20px; }
 .section-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 18px 20px; }
-.section-header h2 { margin: 0; color: #20374e; font-size: 15px; font-weight: 600; line-height: 1.5; }
+.section-header h2 { margin: 0; color: #20374e; font-size: 16px; font-weight: 600; line-height: 1.5; }
 .section-header p { margin: 4px 0 0; color: #8996a4; font-size: 11px; }
-.text-button { display: inline-flex; justify-content: center; align-items: center; gap: 6px; min-height: 36px; padding: 0 7px; border: 0; color: #325a7a; background: transparent; font-size: 11px; font-weight: 500; }
+.text-button { display: inline-flex; justify-content: center; align-items: center; gap: 6px; min-height: 36px; padding: 0 7px; border: 0; color: #325a7a; background: transparent; font-size: 12px; font-weight: 500; }
 .text-button:hover { color: #123e65; }
 .quick-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 18px; border: 1px solid #e2e8ef; border-radius: 15px; background: #fff; }
 .quick-actions > div:first-child { display: flex; align-items: center; gap: 10px; }
 .quick-icon { width: 35px; height: 35px; display: grid; place-items: center; border-radius: 10px; color: #456a88; background: #edf3f8; }
-.quick-actions b { display: block; color: #27435d; font-size: 12px; font-weight: 500; }
+.quick-actions b { display: block; color: #27435d; font-size: 14px; font-weight: 500; }
 .quick-actions small { display: block; margin-top: 3px; color: #8d9aaa; font-size: 10px; }
 .quick-buttons { display: flex; gap: 8px; }
-.quick-buttons button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border: 1px solid; border-radius: 10px; font-size: 11px; font-weight: 500; }
+.quick-buttons button { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border: 1px solid; border-radius: 10px; font-size: 13px; font-weight: 500; }
 .expense-quick { color: #a64d44; border-color: #f0dbd7 !important; background: #fffafa; }
 .income-quick { color: #167147; border-color: #d5eadf !important; background: #f8fcf9; }
 .table-scroll { width: 100%; overflow-x: auto; }
 .transaction-table { width: 100%; min-width: 730px; border-collapse: collapse; text-align: start; }
-.transaction-table th { height: 43px; padding: 0 15px; border-top: 1px solid #edf1f5; border-bottom: 1px solid #edf1f5; color: #8995a2; background: #fafbfd; text-align: start; font-size: 10px; font-weight: 600; white-space: nowrap; }
-.transaction-table td { padding: 11px 15px; border-bottom: 1px solid #edf1f5; color: #586a7c; text-align: start; font-size: 11px; vertical-align: middle; }
+.transaction-table th { height: 44px; padding: 0 15px; border-top: 1px solid #edf1f5; border-bottom: 1px solid #edf1f5; color: #8995a2; background: #fafbfd; text-align: start; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.transaction-table td { padding: 12px 15px; border-bottom: 1px solid #edf1f5; color: #586a7c; text-align: start; font-size: 12px; vertical-align: middle; }
 .transaction-table tbody tr { cursor: pointer; transition: background-color .12s; }
 .transaction-table tbody tr:last-child td { border-bottom: 0; }
 .transaction-table tbody tr:hover { background: #fafcfe; }
-.type-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 20px; font-size: 10px; font-weight: 500; white-space: nowrap; }
+.type-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 20px; font-size: 11px; font-weight: 500; white-space: nowrap; }
 .type-badge > span { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .type-badge.income { color: #18724b; background: #eaf5ee; }
 .type-badge.expense { color: #aa4c43; background: #fbefed; }
-.transaction-description { color: #304a63; font-size: 11px; font-weight: 500; }
+.transaction-description { color: #304a63; font-size: 12px; font-weight: 500; }
 .transaction-description small { display: flex; align-items: center; gap: 5px; margin-top: 4px; color: #96a1ad; font-size: 10px; font-weight: 400; }
 .attachment-mark { color: #6686a2; }
 .muted-cell { color: #b0bac4; }
@@ -156,12 +156,12 @@ button, select { cursor: pointer; }
 .transactions-card { overflow: visible; }
 .toolbar { display: flex; justify-content: space-between; gap: 12px; padding: 16px 18px 12px; }
 .search-field { flex: 1 1 250px; max-width: 360px; height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 11px; border: 1px solid #dfe6ed; border-radius: 10px; color: #8c9aa8; background: #fff; }
-.search-field input { min-width: 0; width: 100%; padding: 0; border: 0; outline: none; color: #334b62; background: transparent; font-size: 11px; }
+.search-field input { min-width: 0; width: 100%; padding: 0; border: 0; outline: none; color: #334b62; background: transparent; font-size: 13px; }
 .search-field:focus-within { border-color: #7fa6c4; box-shadow: 0 0 0 3px rgba(42,116,183,.13); }
 .search-field input::placeholder { color: #a3afbb; }
 .toolbar-filters { display: flex; flex-wrap: wrap; gap: 7px; }
 .select-wrap { display: flex; align-items: center; gap: 5px; height: 38px; padding-inline: 10px; border: 1px solid #dfe6ed; border-radius: 9px; color: #8190a0; }
-.select-wrap select, .plain-select { min-height: 36px; padding: 0 9px; border: 1px solid #dfe6ed; border-radius: 9px; color: #50667a; background-color: #fff; font-size: 10px; }
+.select-wrap select, .plain-select { min-height: 36px; padding: 0 9px; border: 1px solid #dfe6ed; border-radius: 9px; color: #50667a; background-color: #fff; font-size: 12px; }
 .select-wrap select { min-height: initial; padding: 0; border: 0; outline: 0; }
 .date-filter-row { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; padding: 0 18px 13px; color: #788a9a; font-size: 10px; }
 .date-filter-row > span:first-child { font-weight: 500; }
