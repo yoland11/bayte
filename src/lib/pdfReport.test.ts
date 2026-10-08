@@ -1,35 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { buildPdfReportHtml } from './pdfReport';
+import { buildPdfReportModel } from './pdfReport';
 
-const example = {
-  fileDate: '2026-10-07',
-  period: 'كل الفترات',
-  records: [{ type: 'expense' as const, description: '<شراء حديد>', amount: 1250, date: '7 تشرين الأول 2026', category: 'حديد', stage: 'الأساس', person: 'المورد' }],
-  sums: { income: 2000, expenses: 1250, balance: 750 }
-};
+describe('accounting PDF model', () => {
+  it('uses the nine accounting columns in RTL visual order and English numerals', () => {
+    const model = buildPdfReportModel({
+      title: 'كشف حساب عام', projectName: 'بيتي', period: '2026-10-01 — 2026-10-31', fileDate: '2026-10-09',
+      openingBalance: 5_000_000, closingBalance: 5_750_000,
+      sums: { income: 1_000_000, expenses: 250_000, balance: 750_000 },
+      records: [{ date: '2026-10-02', description: 'دفعة حديد', person: 'علي', category: 'مواد', stage: 'الأساس', income: 1_000_000, expense: 250_000, balance: 5_750_000 }]
+    });
 
-describe('PDF report layout', () => {
-  it('lays out report details in metadata cells, summary cards, and a numbered table', () => {
-    const html = buildPdfReportHtml(example);
-    expect(html).toContain('class="pdf-meta-grid"');
-    expect(html).toContain('class="pdf-summary"');
-    expect(html).toContain('<th>م</th>');
-    expect(html).toContain('class="pdf-table-heading"');
-    expect(html).toContain('class="pdf-amount"');
-  });
-
-  it('escapes transaction text and provides an explicit empty state', () => {
-    const populatedHtml = buildPdfReportHtml(example);
-    const emptyHtml = buildPdfReportHtml({ ...example, records: [] });
-    expect(populatedHtml).not.toContain('<شراء حديد>');
-    expect(populatedHtml).toContain('&lt;شراء حديد&gt;');
-    expect(emptyHtml).toContain('لا توجد عمليات ضمن الفترة المحددة');
-  });
-
-  it('includes expense breakdowns by category and construction stage when provided', () => {
-    const html = buildPdfReportHtml({ ...example, expenseByCategory: [{ name: 'حديد', amount: 1250 }], expenseByStage: [{ name: 'الأساس', amount: 1250 }] });
-    expect(html).toContain('الصرف حسب التصنيف');
-    expect(html).toContain('الصرف حسب مرحلة البناء');
-    expect(html).toContain('1,250 د.ع');
+    expect(model.columns.map((column) => column.label)).toEqual([
+      'الرصيد', 'الصرف', 'القبض', 'مرحلة البناء', 'التصنيف', 'العميل / الشخص', 'البيان', 'التاريخ', 'م'
+    ]);
+    expect(model.rows[0]).toEqual(['5,750,000', '250,000', '1,000,000', 'الأساس', 'مواد', 'علي', 'دفعة حديد', '2026-10-02', '1']);
+    expect(model.totals).toEqual(['5,750,000', '250,000', '1,000,000', '', '', '', 'الإجماليات', '', '']);
+    expect(model.summary.map((item) => item.value)).toEqual(['5,000,000', '1,000,000', '250,000', '5,750,000']);
   });
 });

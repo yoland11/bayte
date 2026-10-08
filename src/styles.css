@@ -339,49 +339,6 @@ button, select { cursor: pointer; }
 .sr-only { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0,0,0,0) !important; white-space: nowrap !important; border: 0 !important; }
 .toast { position: fixed; z-index: 80; inset-block-end: 26px; inset-inline-start: 26px; min-height: 42px; display: flex; align-items: center; padding: 0 16px; border: 1px solid rgba(255,255,255,.08); border-radius: 11px; color: #fff; background: #243f57; box-shadow: 0 8px 25px rgba(24,48,70,.2); font-size: 11px; opacity: 0; pointer-events: none; transform: translateY(7px); transition: opacity .16s, transform .16s; }
 .toast:not(:empty) { opacity: 1; transform: translateY(0); }
-/* Dedicated print/PDF document */
-.pdf-export-host { position: fixed; z-index: -1; inset-block-start: 0; inset-inline-start: 0; width: 1040px; opacity: .01; pointer-events: none; }
-.pdf-report { width: 1040px; padding: 22px 24px; color: #20374e; background: #fff; font-family: var(--font-secondary, "Noto Kufi Arabic"), "Geeza Pro", Tahoma, Arial, sans-serif; }
-.pdf-report-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; padding-bottom: 16px; border-bottom: 2px solid #dfe8ef; }
-.pdf-brand { display: flex; align-items: center; gap: 11px; min-width: 210px; }
-.pdf-brand-mark { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; color: #fff; background: #174a73; font-family: var(--font-primary, "Noto Kufi Arabic"), sans-serif; font-size: 19px; font-weight: 700; }
-.pdf-brand h1 { margin: 0; color: #174a73; font-family: var(--font-primary, "Noto Kufi Arabic"), sans-serif; font-size: 22px; line-height: 1.35; }
-.pdf-brand p { margin: 3px 0 0; color: #667b8f; font-size: 10px; }
-.pdf-meta-grid { display: grid; grid-template-columns: repeat(3,minmax(125px,1fr)); gap: 8px; }
-.pdf-meta-cell { display: grid; align-content: center; gap: 4px; min-height: 48px; padding: 7px 10px; border: 1px solid #e1e8ef; border-radius: 8px; background: #f8fafc; }
-.pdf-meta-cell span { color: #8391a0; font-size: 8px; }
-.pdf-meta-cell b { color: #334c64; font-size: 9px; font-weight: 600; }
-.pdf-summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin: 14px 0 18px; }
-.pdf-summary-card { display: grid; gap: 7px; min-height: 62px; padding: 10px 13px; border: 1px solid #dfe7ee; border-inline-start: 3px solid #7c91a4; border-radius: 8px; background: #f9fbfc; break-inside: avoid; page-break-inside: avoid; }
-.pdf-summary-card.income { border-inline-start-color: #26835a; }
-.pdf-summary-card.expense { border-inline-start-color: #c05d53; }
-.pdf-summary-card.balance { border-inline-start-color: #347ca9; }
-.pdf-summary-card span { color: #687b8e; font-size: 9px; }
-.pdf-summary-card b { color: #203d57; font-size: 12px; font-weight: 600; direction: ltr; unicode-bidi: isolate; text-align: right; font-variant-numeric: tabular-nums; }
-.pdf-table-section { break-inside: auto; page-break-inside: auto; }
-.pdf-table-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 7px; break-after: avoid; page-break-after: avoid; }
-.pdf-table-heading h2 { margin: 0; color: #203d57; font-family: var(--font-primary, "Noto Kufi Arabic"), sans-serif; font-size: 12px; font-weight: 700; }
-.pdf-table-heading span { color: #8190a0; font-size: 8px; }
-.pdf-report table { width: 100%; border-collapse: collapse; table-layout: fixed; direction: rtl; }
-.pdf-report thead { display: table-header-group; }
-.pdf-report tr { break-inside: avoid; page-break-inside: avoid; }
-.pdf-report th { padding: 7px 6px; border: 1px solid #d6e1e9; color: #425a70; background: #edf3f8; text-align: start; font-size: 8px; font-weight: 600; }
-.pdf-report td { padding: 6px; border: 1px solid #e3e9ef; color: #435a70; text-align: start; vertical-align: middle; overflow-wrap: anywhere; font-size: 8px; line-height: 1.55; }
-.pdf-report th:nth-child(1) { width: 4%; } .pdf-report th:nth-child(2) { width: 7%; } .pdf-report th:nth-child(3) { width: 22%; } .pdf-report th:nth-child(4) { width: 14%; } .pdf-report th:nth-child(5) { width: 12%; } .pdf-report th:nth-child(6) { width: 12%; } .pdf-report th:nth-child(7) { width: 12%; } .pdf-report th:nth-child(8) { width: 17%; }
-.pdf-report .pdf-index, .pdf-report .pdf-date-cell { text-align: center; white-space: nowrap; }
-.pdf-report .pdf-type { display: inline-block; min-width: 35px; padding: 2px 5px; border-radius: 10px; text-align: center; font-size: 7px; font-weight: 600; }
-.pdf-report .pdf-type.income { color: #18714a; background: #eaf6ee; }
-.pdf-report .pdf-type.expense { color: #a64e45; background: #fcf0ed; }
-.pdf-report .pdf-description { font-weight: 500; }
-.pdf-report .pdf-amount { direction: ltr; unicode-bidi: isolate; text-align: left; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
-.pdf-report .pdf-empty-row td { padding: 22px 10px; color: #8291a0; text-align: center; }
-.pdf-report footer { padding-top: 12px; margin-top: 12px; border-top: 1px solid #e5ebf0; color: #8190a0; text-align: center; font-size: 8px; }
-.pdf-report footer span { padding-inline: 4px; color: #b0bcc7; }
-.pdf-breakdown-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; break-inside: avoid; page-break-inside: avoid; }
-.pdf-breakdown h2 { margin: 0 0 5px; color: #203d57; font-family: var(--font-primary, "Noto Kufi Arabic"), sans-serif; font-size: 9px; }
-.pdf-breakdown table { font-size: 7px; }
-.pdf-breakdown th, .pdf-breakdown td { padding: 4px 5px; }
-@media print { .pdf-export-host { display: none; } }
 @media (max-width: 1280px) {
   .sidebar { width: 230px; }
   .main-area { margin-inline-end: 230px; }

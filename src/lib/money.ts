@@ -49,3 +49,33 @@ export function summarizeTransactions(transactions: Transaction[]): Summary {
 export function sumAmounts(amounts: number[]): number {
   return amounts.reduce((totalCents, amount) => totalCents + Math.round(amount * 100), 0) / 100;
 }
+
+export interface LedgerRow {
+  transaction: Transaction;
+  balanceAfter: number;
+}
+
+export function calculateLedgerRows(
+  allRecords: Transaction[],
+  visibleRecords: Transaction[],
+  range: { from?: string; to?: string } = {}
+): { openingBalance: number; rows: LedgerRow[]; closingBalance: number } {
+  const chronological = [...allRecords].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+  let openingCents = 0;
+  let closingCents = 0;
+  const visibleIds = new Set(visibleRecords.map((record) => record.id));
+  const rows: LedgerRow[] = [];
+  let runningCents = 0;
+
+  for (const transaction of chronological) {
+    const cents = Math.round(transaction.amount * 100) * (transaction.type === 'income' ? 1 : -1);
+    if (range.from && transaction.date < range.from) openingCents += cents;
+    if (!range.to || transaction.date <= range.to) closingCents += cents;
+    runningCents += cents;
+    if (visibleIds.has(transaction.id) && (!range.from || transaction.date >= range.from) && (!range.to || transaction.date <= range.to)) {
+      rows.push({ transaction, balanceAfter: runningCents / 100 });
+    }
+  }
+
+  return { openingBalance: openingCents / 100, rows, closingBalance: closingCents / 100 };
+}

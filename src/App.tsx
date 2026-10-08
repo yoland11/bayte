@@ -12,9 +12,8 @@ import { clearPinUnlock, ensureCloudUser, isPinUnlockedForUser, savePinUnlock } 
 import { cloudLoadErrorMessage } from './lib/cloudError';
 import { deleteCloudClient, deleteCloudLogo, deleteCloudOption, deleteCloudTransaction, getCloudAttachment, importLocalBackup, loadCloudWorkspace, loadFontPreferences, permanentlyDeleteCloudTransaction, restoreCloudTransaction, saveCloudClient, saveCloudOption, saveCloudProjectSettings, saveFontPreferences, saveCloudTransaction, uploadCloudLogo } from './lib/cloudData';
 import { requireSupabase, supabase, supabaseConfigured } from './lib/supabase';
-import { formatAmount, formatCurrency, normalizeDigits, parseAmount, summarizeTransactions, sumAmounts } from './lib/money';
+import { calculateLedgerRows, formatAmount, formatCurrency, normalizeDigits, parseAmount, summarizeTransactions, sumAmounts } from './lib/money';
 import { DEFAULT_FONT_PREFERENCES, FONT_OPTIONS, FONT_PREFERENCES_STORAGE_KEY, fontFamilyFor, parseFontPreferences, type FontPreferences, type FontStyleId } from './lib/fonts';
-import { buildPdfReportHtml } from './lib/pdfReport';
 import { filterAndSortTransactions, getPeriodBounds, type Period, type TransactionFilters } from './lib/transactions';
 import type { Client, NamedOption, Transaction, TransactionType } from './lib/types';
 import { arrangeDashboardCards, summarizeClientStatement, type DashboardCard } from './lib/workspaceFeatures';
@@ -201,7 +200,7 @@ function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
   const onSaved = (message: string) => { setDialog(null); setToast(message); void refreshCloudData(); };
   const changePage = (id: Page) => { setPage(id); setMobileMenu(false); };
 
-  async function exportFile(kind: 'pdf' | 'excel', records: Transaction[], label: string, sums = summarizeTransactions(records)) {
+  async function exportFile(kind: 'pdf' | 'excel', records: Transaction[], label: string, sums = summarizeTransactions(records), pdfOptions: { title?: string; allRecords?: Transaction[]; clientName?: string; range?: { from?: string; to?: string } } = {}) {
     if (exporting) return;
     setExporting(kind); setExportError('');
     try {
@@ -281,14 +280,16 @@ function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
         const link = document.createElement('a'); link.href = url; link.download = `بيتي-تقرير-مالي-${fileDate}.xlsx`; link.click();
         window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       } else {
-        const pdfHost = document.createElement('div');
-        pdfHost.className = 'pdf-export-host';
-        pdfHost.dir = 'rtl';
-        pdfHost.style.setProperty('--font-primary', fontFamilyFor(fontPreferences.primary));
-        pdfHost.style.setProperty('--font-secondary', fontFamilyFor(fontPreferences.secondary));
-        pdfHost.innerHTML = buildPdfReportHtml({
+        const { createPdfReport } = await import('./lib/pdfReport');
+        const ledger = calculateLedgerRows(pdfOptions.allRecords ?? transactions, records, pdfOptions.range);
+        const pdf = await createPdfReport({
+          title: pdfOptions.title ?? 'التقرير المالي',
+          projectName: normalizeDigits(projectName),
+          clientName: pdfOptions.clientName ? normalizeDigits(pdfOptions.clientName) : undefined,
           fileDate,
-          period: label,
+          period: normalizeDigits(pdfOptions.range && (pdfOptions.range.from || pdfOptions.range.to) ? `${pdfOptions.range.from ?? 'البداية'} — ${pdfOptions.range.to ?? 'اليوم'}` : label),
+          openingBalance: ledger.openingBalance,
+          closingBalance: ledger.closingBalance,
           sums,
           expenseByCategory: [
             ...categories.map((option) => ({ name: normalizeDigits(option.name), amount: sumAmounts(records.filter((row) => row.type === 'expense' && row.categoryId === option.id).map((row) => row.amount)) })),
@@ -298,26 +299,23 @@ function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
             ...stages.map((option) => ({ name: normalizeDigits(option.name), amount: sumAmounts(records.filter((row) => row.type === 'expense' && row.stageId === option.id).map((row) => row.amount)) })),
             { name: 'غير محددة', amount: sumAmounts(records.filter((row) => row.type === 'expense' && !row.stageId).map((row) => row.amount)) }
           ].filter((row) => row.amount > 0).sort((a, b) => b.amount - a.amount),
-          records: records.map((row) => ({
-            type: row.type,
-            description: normalizeDigits(row.description),
-            amount: row.amount,
-            date: formatDate(row.date),
-            category: normalizeDigits(byId.get(row.categoryId ?? '') ?? '—'),
-            stage: normalizeDigits(stageById.get(row.stageId ?? '') ?? '—'),
-            person: normalizeDigits([clientById.get(row.clientId ?? ''), row.person].filter(Boolean).join(' · ') || '—')
+          records: ledger.rows.map(({ transaction, balanceAfter }) => ({
+            description: normalizeDigits(transaction.description),
+            income: transaction.type === 'income' ? transaction.amount : 0,
+            expense: transaction.type === 'expense' ? transaction.amount : 0,
+            balance: balanceAfter,
+            date: normalizeDigits(transaction.date),
+            category: normalizeDigits(byId.get(transaction.categoryId ?? '') ?? '—'),
+            stage: normalizeDigits(stageById.get(transaction.stageId ?? '') ?? '—'),
+            person: normalizeDigits([clientById.get(transaction.clientId ?? ''), transaction.person].filter(Boolean).join(' · ') || '—')
           }))
         });
-        document.body.appendChild(pdfHost);
-        const module = await import('html2pdf.js');
-        const html2pdf = module.default as any;
-        await html2pdf().set({
-          margin: [10, 7, 12, 7], filename: `بيتي-تقرير-مالي-${fileDate}.pdf`, image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', scrollY: 0 },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
-          pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.pdf-summary', '.pdf-table-heading'] }
-        }).from(pdfHost.firstElementChild as HTMLElement).save();
-        pdfHost.remove();
+        const url = URL.createObjectURL(pdf);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `بيتي-${pdfOptions.title === 'كشف حساب عام' ? 'كشف-حساب-عام' : pdfOptions.title === 'كشف حساب عميل' ? 'كشف-حساب-عميل' : 'تقرير-مالي'}-${fileDate}.pdf`;
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
       setToast(kind === 'pdf' ? 'تم إنشاء التقرير بصيغة PDF' : 'تم إنشاء جدول البيانات');
     } catch (error) {
@@ -366,7 +364,7 @@ function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
       {page === 'transactions' && <section className="page-content">
         <div className="page-heading"><div><p className="eyebrow">السجل المالي</p><h1>العمليات</h1></div><button className="primary-button" onClick={() => showCreate()}><Plus size={17} />إضافة عملية</button></div>
         <section className="content-card transactions-card"><div className="toolbar"><label className="search-field"><Search size={17} /><input value={filters.query} onChange={(e) => setFilters({ ...filters, query: normalizeDigits(e.target.value) })} placeholder="بحث بالبيان أو الشخص أو الملاحظات" aria-label="بحث في العمليات" /></label><div className="toolbar-filters"><label className="select-wrap"><Filter size={16} /><select aria-label="تصفية حسب النوع" value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value as TransactionFilters['type'] })}><option value="all">كل العمليات</option><option value="income">قبض</option><option value="expense">صرف</option></select></label><select className="plain-select" aria-label="تصفية حسب التصنيف" value={filters.categoryId ?? ''} onChange={(e) => setFilters({ ...filters, categoryId: e.target.value || undefined })}><option value="">كل التصنيفات</option>{categories.map((item) => <option key={item.id} value={item.id}>{normalizeDigits(item.name)}</option>)}</select><select className="plain-select" aria-label="تصفية حسب المرحلة" value={filters.stageId ?? ''} onChange={(e) => setFilters({ ...filters, stageId: e.target.value || undefined })}><option value="">كل المراحل</option>{stages.map((item) => <option key={item.id} value={item.id}>{normalizeDigits(item.name)}</option>)}</select><select className="plain-select sort-select" aria-label="ترتيب العمليات" value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value as TransactionFilters['sort'] })}><option value="newest">الأحدث</option><option value="oldest">الأقدم</option></select></div></div>
-            <div className="date-filter-row"><span>الفترة</span><select className="plain-select" aria-label="فترة العمليات" value={period} onChange={(e) => { const next = e.target.value as Period; setPeriod(next); setFilters((current) => ({ query: current.query, type: current.type, categoryId: current.categoryId, stageId: current.stageId, sort: current.sort, ...getPeriodBounds(next, new Date(), periodFrom, periodTo) })); }}><option value="all">كل الفترات</option><option value="today">اليوم</option><option value="week">هذا الأسبوع</option><option value="month">هذا الشهر</option><option value="year">هذه السنة</option><option value="custom">نطاق مخصص</option></select>{period === 'custom' && <><label>من<input type="date" value={periodFrom} onChange={(e) => { setPeriodFrom(e.target.value); setFilters({ ...filters, ...getPeriodBounds('custom', new Date(), e.target.value, periodTo) }); }} /></label><label>إلى<input type="date" value={periodTo} onChange={(e) => { setPeriodTo(e.target.value); setFilters({ ...filters, ...getPeriodBounds('custom', new Date(), periodFrom, e.target.value) }); }} /></label></>}<span className="result-count">{formatAmount(visibleTransactions.length)} عملية</span><button className="outline-button export-small" disabled={!!exporting} onClick={() => exportFile('excel', visibleTransactions, transactionExportLabel)}><FileSpreadsheet size={15} />{exporting === 'excel' ? 'جاري الإنشاء…' : 'تصدير جدول البيانات'}</button><button className="outline-button export-small" disabled={!!exporting} onClick={() => exportFile('pdf', visibleTransactions, transactionExportLabel)}><FileDown size={15} />تصدير تقرير PDF</button></div>
+        <div className="date-filter-row"><span>الفترة</span><select className="plain-select" aria-label="فترة العمليات" value={period} onChange={(e) => { const next = e.target.value as Period; setPeriod(next); setFilters((current) => ({ query: current.query, type: current.type, categoryId: current.categoryId, stageId: current.stageId, sort: current.sort, ...getPeriodBounds(next, new Date(), periodFrom, periodTo) })); }}><option value="all">كل الفترات</option><option value="today">اليوم</option><option value="week">هذا الأسبوع</option><option value="month">هذا الشهر</option><option value="year">هذه السنة</option><option value="custom">نطاق مخصص</option></select>{period === 'custom' && <><label>من<input type="date" value={periodFrom} onChange={(e) => { setPeriodFrom(e.target.value); setFilters({ ...filters, ...getPeriodBounds('custom', new Date(), e.target.value, periodTo) }); }} /></label><label>إلى<input type="date" value={periodTo} onChange={(e) => { setPeriodTo(e.target.value); setFilters({ ...filters, ...getPeriodBounds('custom', new Date(), periodFrom, e.target.value) }); }} /></label></>}<span className="result-count">{formatAmount(visibleTransactions.length)} عملية</span><button className="outline-button export-small" disabled={!!exporting} onClick={() => exportFile('excel', visibleTransactions, transactionExportLabel)}><FileSpreadsheet size={15} />{exporting === 'excel' ? 'جاري الإنشاء…' : 'تصدير جدول البيانات'}</button><button className="outline-button export-small" disabled={!!exporting} onClick={() => exportFile('pdf', visibleTransactions, transactionExportLabel, undefined, { title: 'كشف حساب عام', allRecords: transactions, range: { from: filters.from, to: filters.to } })}><FileDown size={15} />تصدير تقرير PDF</button></div>
           <TransactionTable records={visibleTransactions} categories={byId} stages={stageById} onDetails={(record) => setDialog({ mode: 'detail', record })} emptyText={filters.query || filters.type !== 'all' || filters.categoryId || filters.stageId ? 'لا توجد نتائج تطابق البحث' : 'لا توجد عمليات بعد'} onAdd={() => showCreate()} />
         </section>
       </section>}
@@ -375,7 +373,7 @@ function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
       {page === 'trash' && <TrashPage records={trashedTransactions} categories={byId} stages={stageById} projectId={projectId} onToast={setToast} onRefresh={refreshCloudData} />}
 
       {page === 'reports' && <section className="page-content reports-page">
-        <div className="page-heading"><div><p className="eyebrow">ملخص ومراجعة</p><h1>التقارير</h1></div><div className="export-menu"><button className="secondary-button" onClick={() => document.getElementById('export-options')?.classList.toggle('open')} disabled={!!exporting}><Download size={17} />{exporting ? 'جاري إنشاء الملف…' : 'تصدير'}<ChevronDown size={15} /></button><div id="export-options" className="export-options"><button onClick={() => { void exportFile('pdf', reportTransactions, `${reportLabel} · النوع: ${reportType === 'all' ? 'الكل' : reportType === 'income' ? 'قبض' : 'صرف'}`); document.getElementById('export-options')?.classList.remove('open'); }}><FileDown size={16} />تنزيل النتائج بصيغة PDF</button><button onClick={() => { void exportFile('excel', reportTransactions, `${reportLabel} · النوع: ${reportType === 'all' ? 'الكل' : reportType === 'income' ? 'قبض' : 'صرف'}`); document.getElementById('export-options')?.classList.remove('open'); }}><FileSpreadsheet size={16} />تنزيل جدول النتائج</button><span className="export-divider" /><button onClick={() => { void exportFile('pdf', transactions, 'كل العمليات'); document.getElementById('export-options')?.classList.remove('open'); }}><FileDown size={16} />تقرير PDF لكل العمليات</button><button onClick={() => { void exportFile('excel', transactions, 'كل العمليات'); document.getElementById('export-options')?.classList.remove('open'); }}><FileSpreadsheet size={16} />جدول لكل العمليات</button></div></div></div>
+        <div className="page-heading"><div><p className="eyebrow">ملخص ومراجعة</p><h1>التقارير</h1></div><div className="export-menu"><button className="secondary-button" onClick={() => document.getElementById('export-options')?.classList.toggle('open')} disabled={!!exporting}><Download size={17} />{exporting ? 'جاري إنشاء الملف…' : 'تصدير'}<ChevronDown size={15} /></button><div id="export-options" className="export-options"><button onClick={() => { void exportFile('pdf', reportTransactions, `${reportLabel} · النوع: ${reportType === 'all' ? 'الكل' : reportType === 'income' ? 'قبض' : 'صرف'}`, undefined, { title: 'التقرير المالي', allRecords: transactions, range: reportBounds }); document.getElementById('export-options')?.classList.remove('open'); }}><FileDown size={16} />تنزيل النتائج بصيغة PDF</button><button onClick={() => { void exportFile('excel', reportTransactions, `${reportLabel} · النوع: ${reportType === 'all' ? 'الكل' : reportType === 'income' ? 'قبض' : 'صرف'}`); document.getElementById('export-options')?.classList.remove('open'); }}><FileSpreadsheet size={16} />تنزيل جدول النتائج</button><span className="export-divider" /><button onClick={() => { void exportFile('pdf', transactions, 'كل العمليات', undefined, { title: 'التقرير المالي', allRecords: transactions }); document.getElementById('export-options')?.classList.remove('open'); }}><FileDown size={16} />تقرير PDF لكل العمليات</button><button onClick={() => { void exportFile('excel', transactions, 'كل العمليات'); document.getElementById('export-options')?.classList.remove('open'); }}><FileSpreadsheet size={16} />جدول لكل العمليات</button></div></div></div>
         <section className="report-filter content-card"><div className="report-filter-title"><Filter size={17} /><b>تصفية التقرير</b></div><label>الفترة<select className="plain-select" value={period} onChange={(e) => setPeriod(e.target.value as Period)}><option value="today">اليوم</option><option value="week">هذا الأسبوع</option><option value="month">هذا الشهر</option><option value="year">هذه السنة</option><option value="custom">نطاق مخصص</option><option value="all">كل الفترات</option></select></label>{period === 'custom' && <><label>من<input type="date" value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)} /></label><label>إلى<input type="date" value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} /></label></>}<label>النوع<select className="plain-select" value={reportType} onChange={(e) => setReportType(e.target.value as TransactionFilters['type'])}><option value="all">الكل</option><option value="income">قبض</option><option value="expense">صرف</option></select></label><span className="result-count">{formatAmount(reportTransactions.length)} عملية</span></section>
         {exportError && <p className="error-banner" role="alert">{exportError}</p>}
         <section className="report-summary-grid"><SummaryTile label="إجمالي القبض" value={summarizeTransactions(reportTransactions).income} kind="income" /><SummaryTile label="إجمالي الصرف" value={summarizeTransactions(reportTransactions).expenses} kind="expense" /><SummaryTile label="الرصيد الحالي" value={summarizeTransactions(reportTransactions).balance} kind="balance" /></section>
@@ -720,7 +718,7 @@ function ClientManager({ clients, transactions, user, projectId, onToast, onRefr
   return <><form className="client-add-form" onSubmit={(event) => void saveClient(event)}><label>الاسم<input required value={name} onChange={(event) => setName(normalizeDigits(event.target.value))} placeholder="اسم العميل" /></label><label>رقم الهاتف<input inputMode="tel" dir="ltr" value={phone} onChange={(event) => setPhone(normalizeDigits(event.target.value))} placeholder="07XXXXXXXXX" /></label><label>المهنة<input value={profession} onChange={(event) => setProfession(normalizeDigits(event.target.value))} placeholder="المهنة" /></label><button className="primary-button" disabled={busy || !name.trim()}><Plus size={16} />إضافة عميل</button></form>{clients.length ? <ul className="client-list">{clients.map((client) => <li key={client.id}><div><b>{normalizeDigits(client.name)}</b><span>{client.phone ? <bdi dir="ltr">{normalizeDigits(client.phone)}</bdi> : 'بدون رقم هاتف'}{client.profession ? ` · ${normalizeDigits(client.profession)}` : ''}</span></div><div><button className="icon-button" disabled={busy} onClick={() => void editClient(client)} aria-label={`تعديل ${client.name}`}><Pencil size={15} /></button><button className="icon-button delete-icon" disabled={busy} onClick={() => void removeClient(client)} aria-label={`حذف ${client.name}`}><Trash2 size={15} /></button></div></li>)}</ul> : <div className="settings-empty">أضف العملاء لتظهر أسماؤهم في العمليات وكشف الحساب.</div>}</>;
 }
 
-function ClientStatementPage({ clients, transactions, categories, stages, onDetails, onExport, exporting }: { clients: Client[]; transactions: Transaction[]; categories: Map<string, string>; stages: Map<string, string>; onDetails: (record: Transaction) => void; onExport: (kind: 'pdf' | 'excel', records: Transaction[], label: string, sums?: ReturnType<typeof summarizeTransactions>) => Promise<void>; exporting: 'pdf' | 'excel' | null }) {
+function ClientStatementPage({ clients, transactions, categories, stages, onDetails, onExport, exporting }: { clients: Client[]; transactions: Transaction[]; categories: Map<string, string>; stages: Map<string, string>; onDetails: (record: Transaction) => void; onExport: (kind: 'pdf' | 'excel', records: Transaction[], label: string, sums?: ReturnType<typeof summarizeTransactions>, pdfOptions?: { title?: string; allRecords?: Transaction[]; clientName?: string; range?: { from?: string; to?: string } }) => Promise<void>; exporting: 'pdf' | 'excel' | null }) {
   const [clientId, setClientId] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -730,7 +728,7 @@ function ClientStatementPage({ clients, transactions, categories, stages, onDeta
   const summary = summarizeTransactions(records);
   const selected = clients.find((client) => client.id === clientId);
   const label = `${selected?.name ?? 'كشف حساب'} · ${from || 'البداية'} — ${to || 'اليوم'} · ${type === 'all' ? 'القبض والصرف' : type === 'income' ? 'القبض' : 'الصرف'}`;
-  return <section className="page-content statement-page"><div className="page-heading"><div><p className="eyebrow">حسابات العملاء</p><h1>كشف حساب</h1><p className="page-subtitle">راجع كل عمليات القبض والصرف المرتبطة بالعميل</p></div><div className="settings-inline-actions"><button className="secondary-button" disabled={!selected || !!exporting} onClick={() => void onExport('pdf', records, label, summary)}><FileDown size={16} />PDF</button><button className="secondary-button" disabled={!selected || !!exporting} onClick={() => void onExport('excel', records, label, summary)}><FileSpreadsheet size={16} />Excel</button></div></div>
+  return <section className="page-content statement-page"><div className="page-heading"><div><p className="eyebrow">حسابات العملاء</p><h1>كشف حساب</h1><p className="page-subtitle">راجع كل عمليات القبض والصرف المرتبطة بالعميل</p></div><div className="settings-inline-actions"><button className="secondary-button" disabled={!selected || !!exporting} onClick={() => void onExport('pdf', records, label, summary, { title: 'كشف حساب عميل', allRecords: base, clientName: selected?.name, range: { from: from || undefined, to: to || undefined } })}><FileDown size={16} />PDF</button><button className="secondary-button" disabled={!selected || !!exporting} onClick={() => void onExport('excel', records, label, summary)}><FileSpreadsheet size={16} />Excel</button></div></div>
     <section className="content-card statement-filter"><label>العميل<select value={clientId} onChange={(event) => setClientId(event.target.value)}><option value="">اختر عميلاً</option>{clients.map((client) => <option key={client.id} value={client.id}>{normalizeDigits(client.name)}</option>)}</select></label><label>من تاريخ<input type="date" lang="en" dir="ltr" value={from} onChange={(event) => setFrom(normalizeDigits(event.target.value))} /></label><label>إلى تاريخ<input type="date" lang="en" dir="ltr" value={to} onChange={(event) => setTo(normalizeDigits(event.target.value))} /></label><label>النوع<select value={type} onChange={(event) => setType(event.target.value as 'all' | TransactionType)}><option value="all">القبض والصرف</option><option value="income">قبض</option><option value="expense">صرف</option></select></label></section>
     {!clients.length ? <section className="content-card settings-empty">أضف العملاء من الإعدادات أولاً.</section> : !selected ? <section className="content-card settings-empty">اختر عميلاً لعرض كشف حسابه.</section> : <><section className="report-summary-grid"><SummaryTile label="إجمالي القبض" value={summary.income} kind="income" /><SummaryTile label="إجمالي الصرف" value={summary.expenses} kind="expense" /><SummaryTile label="الرصيد (القبض - الصرف)" value={summary.balance} kind="balance" /></section><section className="content-card statement-transactions"><div className="section-header"><div><h2>{normalizeDigits(selected.name)}</h2><p>{selected.phone ? <bdi dir="ltr">{normalizeDigits(selected.phone)}</bdi> : 'بدون رقم هاتف'}{selected.profession ? ` · ${normalizeDigits(selected.profession)}` : ''} · {formatAmount(records.length)} عملية</p></div></div><TransactionTable records={records} categories={categories} stages={stages} onDetails={onDetails} emptyText="لا توجد عمليات لهذا العميل ضمن الفترة المحددة" /></section></>}
   </section>;

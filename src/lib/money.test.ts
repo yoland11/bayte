@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatAmount, formatCurrency, parseAmount, summarizeTransactions, sumAmounts } from './money';
+import { calculateLedgerRows, formatAmount, formatCurrency, parseAmount, summarizeTransactions, sumAmounts } from './money';
 import type { Transaction } from './types';
 
 const records: Transaction[] = [
@@ -45,5 +45,25 @@ describe('money utilities', () => {
       { id: 'sample-out-2', type: 'expense', amount: 150_000, description: 'test', date: '2026-10-04', createdAt: 4, updatedAt: 4 }
     ];
     expect(summarizeTransactions(sample)).toEqual({ income: 1_500_000, expenses: 400_000, balance: 1_100_000 });
+  });
+
+  it('calculates opening and running balances from the complete chronological ledger', () => {
+    const ledger: Transaction[] = [
+      { id: 'a', type: 'income', amount: 1_000_000, description: 'قبض أول', date: '2026-10-01', createdAt: 1, updatedAt: 1 },
+      { id: 'b', type: 'expense', amount: 250_000, description: 'صرف', date: '2026-10-02', createdAt: 2, updatedAt: 2 },
+      { id: 'c', type: 'income', amount: 5.55, description: 'قبض', date: '2026-10-03', createdAt: 3, updatedAt: 3 },
+      { id: 'd', type: 'expense', amount: 1.1, description: 'صرف مستبعد من العرض', date: '2026-10-03', createdAt: 4, updatedAt: 4 },
+      { id: 'e', type: 'expense', amount: 2.2, description: 'صرف لاحق', date: '2026-10-05', createdAt: 5, updatedAt: 5 }
+    ];
+
+    const filtered = calculateLedgerRows(ledger, [ledger[2]], { from: '2026-10-03', to: '2026-10-04' });
+    expect(filtered.openingBalance).toBe(750_000);
+    expect(filtered.rows.map((row) => [row.transaction.id, row.balanceAfter])).toEqual([['c', 750_005.55]]);
+    expect(filtered.closingBalance).toBe(750_004.45);
+
+    const all = calculateLedgerRows(ledger, [...ledger].reverse());
+    expect(all.rows.map((row) => [row.transaction.id, row.balanceAfter])).toEqual([
+      ['a', 1_000_000], ['b', 750_000], ['c', 750_005.55], ['d', 750_004.45], ['e', 750_002.25]
+    ]);
   });
 });
