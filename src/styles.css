@@ -169,6 +169,12 @@ button, select { cursor: pointer; }
 .date-filter-row input, .report-filter input[type="date"] { height: 35px; padding: 0 7px; border: 1px solid #dfe6ed; border-radius: 8px; color: #5c6d7d; background: #fff; font-size: 10px; }
 .result-count { margin-inline-start: auto; color: #93a0ae; font-size: 10px; white-space: nowrap; }
 .export-small { min-height: 33px; padding: 0 9px; font-size: 10px; }
+.selection-count { color: #345672; font-weight: 500; white-space: nowrap; }
+.selectable-table { min-width: 780px; }
+.transaction-table .selection-cell { width: 42px; padding-inline: 8px; text-align: center; }
+.selection-cell input { width: 17px; height: 17px; margin: 0; accent-color: var(--primary); vertical-align: middle; cursor: pointer; }
+.trash-heading-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.trash-heading-actions .danger-outline { min-height: 36px; padding-inline: 11px; font-size: 11px; }
 /* Reports */
 .export-menu { position: relative; }
 .export-menu > button { min-width: 115px; }

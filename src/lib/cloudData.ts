@@ -118,6 +118,13 @@ export async function deleteCloudTransaction(projectId: string, id: string): Pro
   await checked(client.from('transactions').update({ deleted_at: new Date().toISOString() }).eq('id', id).eq('project_id', projectId).is('deleted_at', null));
 }
 
+export async function deleteCloudTransactions(projectId: string, ids: string[]): Promise<void> {
+  const uniqueIds = [...new Set(ids)];
+  if (!uniqueIds.length) return;
+  const client = requireSupabase();
+  await checked(client.from('transactions').update({ deleted_at: new Date().toISOString() }).in('id', uniqueIds).eq('project_id', projectId).is('deleted_at', null));
+}
+
 export async function restoreCloudTransaction(projectId: string, id: string): Promise<void> {
   const client = requireSupabase();
   await checked(client.from('transactions').update({ deleted_at: null }).eq('id', id).eq('project_id', projectId).not('deleted_at', 'is', null));
@@ -129,6 +136,19 @@ export async function permanentlyDeleteCloudTransaction(projectId: string, id: s
   await checked(client.from('transactions').delete().eq('id', id).eq('project_id', projectId).not('deleted_at', 'is', null));
   if (file) {
     const result = await client.storage.from('transaction-attachments').remove([file.file_path]);
+    if (result.error) console.error('Attachment cleanup failed', result.error.message);
+  }
+}
+
+export async function permanentlyDeleteCloudTransactions(projectId: string, ids: string[]): Promise<void> {
+  const uniqueIds = [...new Set(ids)];
+  if (!uniqueIds.length) return;
+  const client = requireSupabase();
+  const files = await checked(client.from('attachments').select('file_path').eq('project_id', projectId).in('transaction_id', uniqueIds)) as Pick<AttachmentRow, 'file_path'>[];
+  await checked(client.from('transactions').delete().eq('project_id', projectId).in('id', uniqueIds).not('deleted_at', 'is', null));
+  const filePaths = files.map((file) => file.file_path);
+  if (filePaths.length) {
+    const result = await client.storage.from('transaction-attachments').remove(filePaths);
     if (result.error) console.error('Attachment cleanup failed', result.error.message);
   }
 }
