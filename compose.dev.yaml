@@ -1,0 +1,16 @@
+services:
+  bayti:
+    container_name: bayti-dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    environment:
+      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:?Set VITE_SUPABASE_URL in .env.local}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY:-${VITE_SUPABASE_ANON_KEY:?Set a Supabase publishable or anon key in .env.local}}
+      VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/app
+      - /app/node_modules
