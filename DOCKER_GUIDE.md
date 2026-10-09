@@ -8,6 +8,12 @@
   - `VITE_SUPABASE_URL`
   - `VITE_SUPABASE_PUBLISHABLE_KEY`، أو `VITE_SUPABASE_ANON_KEY` للمشاريع التي تستخدم الاسم القديم.
 
+على macOS، إذا لم يتعرف Terminal على أمر `docker`، أضف مسار Docker Desktop إلى الجلسة الحالية:
+
+```bash
+export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
+```
+
 قيم `VITE_*` عامة ومضمنة في JavaScript الذي يصل إلى المتصفح. لا تضع `service_role` أو كلمات مرور قواعد البيانات أو مفاتيح خاصة ضمن هذه المتغيرات.
 
 ## تشغيل نسخة الإنتاج
