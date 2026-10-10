@@ -455,6 +455,161 @@ button, select { cursor: pointer; }
   .trash-actions .outline-button { padding-inline: 6px; }
   .toast { inset-inline: 14px; justify-content: center; inset-block-end: calc(76px + env(safe-area-inset-bottom)); }
 }
+
+/* Uiverse MIT adaptations: JkHuger (theme switch), Praashoo7 (search field),
+   AKAspidey01 (back action), _1380 (radio/glider navigation), cssbuttons-io (action buttons). */
+
+/* JkHuger theme switch, adapted to Beity colors and a compact toolbar control. */
+.theme-switch { position: relative; display: inline-flex; flex: 0 0 auto; align-items: center; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.theme-switch input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.theme-switch-track { position: relative; display: block; width: 54px; height: 30px; padding: 3px; border-radius: 999px; background: #f2d77e; box-shadow: inset 0 0 0 1px rgba(26,57,83,.08); transition: background-color .3s ease, box-shadow .2s ease; }
+.theme-switch-thumb { position: relative; display: block; width: 24px; height: 24px; border-radius: 50%; background: #fff9db; box-shadow: 0 1px 4px rgba(34,49,65,.2); transition: transform .3s cubic-bezier(.2,.8,.2,1), background-color .3s ease; }
+.theme-switch-thumb::before { position: absolute; content: ""; inset: 7px; border-radius: 50%; background: #f4c84e; box-shadow: 0 0 0 3px #f4c84e; transition: all .3s ease; }
+.theme-switch input:checked + .theme-switch-track { background: #183d60; box-shadow: inset 0 0 0 1px rgba(13,34,52,.24); }
+.theme-switch input:checked + .theme-switch-track .theme-switch-thumb { transform: translateX(-24px); background: #d9e9f5; }
+.theme-switch input:checked + .theme-switch-track .theme-switch-thumb::before { inset: 4px 6px 7px 4px; background: #d9e9f5; box-shadow: -4px 2px 0 0 #6c91b1; }
+.theme-switch input:focus-visible + .theme-switch-track { outline: 3px solid rgba(42,116,183,.38); outline-offset: 3px; }
+
+/* Praashoo7's inset search treatment, kept within the current field dimensions. */
+.search-field { border-color: #e6ebf0; background: #f3f5f7; box-shadow: inset 2px 4px 8px rgba(35,53,71,.10); }
+.search-field:focus-within { border-color: #9dbbd2; background: #fff; box-shadow: inset 1px 2px 4px rgba(35,53,71,.06), 0 0 0 3px rgba(42,116,183,.12); }
+
+/* cssbuttons-io's layered gradient/shadow action treatment, using Beity blue. */
+.primary-button:not(:disabled) { background: linear-gradient(135deg, #2b6da8, #174b79 52%, #123a62); box-shadow: 0 6px 16px rgba(20,72,120,.2), inset 0 1px 0 rgba(255,255,255,.2); }
+.primary-button:hover:not(:disabled) { background: linear-gradient(135deg, #357db8, #1c5688 52%, #164873); box-shadow: 0 8px 19px rgba(20,72,120,.25), inset 0 1px 0 rgba(255,255,255,.22); }
+.primary-button:active:not(:disabled) { transform: scale(.96); }
+
+/* AKAspidey01 back action: the arrow's accent expands across the pill on hover. */
+.dialog-head .back-button { position: relative; isolation: isolate; overflow: hidden; flex: 0 0 40px; color: #214c70; background: #f2f6fa; transition: color .25s ease, transform .2s ease; }
+.dialog-head .back-button::before { position: absolute; z-index: -1; content: ""; inset-block: 3px; inset-inline-start: 3px; width: 34px; border-radius: 999px; background: #9ec5e2; transition: width .45s cubic-bezier(.2,.8,.2,1), background-color .2s ease; }
+.dialog-head .back-button:hover { color: #153b5e; }
+.dialog-head .back-button:hover::before { width: calc(100% - 6px); background: #b8d7eb; }
+
+/* _1380 radio glider for mobile section navigation and a short section entrance. */
+.bottom-nav { isolation: isolate; }
+.bottom-nav::before { position: absolute; z-index: -1; content: ""; inset-block: 5px; inset-inline-start: 5px; width: calc((100% - 10px) / 6); border-radius: 16px; background: linear-gradient(135deg, #e8f2f9, #dcebf6); box-shadow: inset 0 1px 3px rgba(255,255,255,.9), 0 2px 8px rgba(32,81,118,.08); transform: translateX(calc(-100% * var(--active-tab, 0))); transition: transform .5s cubic-bezier(.37,1.45,.56,1), background .3s ease, box-shadow .3s ease; }
+.bottom-nav button.active { background: transparent; }
+.page-content { animation: beity-section-enter .32s cubic-bezier(.2,.75,.25,1) both; }
+@keyframes beity-section-enter { from { opacity: .7; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Persistent dark theme; all styles remain scoped to the app shell. */
+.app-shell[data-theme="dark"] {
+  --background: #111b25;
+  --card: #192632;
+  --foreground: #e3ebf2;
+  --muted: #9aabba;
+  --muted-soft: #202e3b;
+  --border: #334555;
+  --surface-border: #334555;
+  --primary: #3279b6;
+  --primary-hover: #3e8bc9;
+  --primary-soft: #263c4e;
+  --income: #65c394;
+  --income-soft: #1e3b32;
+  --expense: #e58b80;
+  --expense-soft: #432e30;
+  --shadow: 0 1px 2px rgba(0,0,0,.16), 0 8px 24px rgba(0,0,0,.13);
+  --surface-shadow: 0 1px 2px rgba(0,0,0,.16), 0 5px 16px rgba(0,0,0,.12);
+  color: var(--foreground);
+  background: var(--background);
+  color-scheme: dark;
+}
+.app-shell[data-theme="dark"] .main-area { background: var(--background); }
+.app-shell[data-theme="dark"] .topbar { border-color: #2a3a49; background: rgba(17,27,37,.94); }
+.app-shell[data-theme="dark"] .breadcrumbs strong,
+.app-shell[data-theme="dark"] .page-heading h1,
+.app-shell[data-theme="dark"] .section-header h2,
+.app-shell[data-theme="dark"] .dialog-head h2,
+.app-shell[data-theme="dark"] .metric-value,
+.app-shell[data-theme="dark"] .summary-tile strong,
+.app-shell[data-theme="dark"] .period-totals strong,
+.app-shell[data-theme="dark"] .quick-actions b { color: #e0e9f1; }
+.app-shell[data-theme="dark"] .breadcrumbs,
+.app-shell[data-theme="dark"] .today-chip,
+.app-shell[data-theme="dark"] .page-subtitle,
+.app-shell[data-theme="dark"] .section-header p,
+.app-shell[data-theme="dark"] .eyebrow,
+.app-shell[data-theme="dark"] .metric-label,
+.app-shell[data-theme="dark"] .summary-tile > span,
+.app-shell[data-theme="dark"] .breakdown-label,
+.app-shell[data-theme="dark"] .period-totals > div,
+.app-shell[data-theme="dark"] .app-footer { color: #9bacbc; }
+.app-shell[data-theme="dark"] .content-card,
+.app-shell[data-theme="dark"] .metric-card,
+.app-shell[data-theme="dark"] .quick-actions,
+.app-shell[data-theme="dark"] .summary-tile,
+.app-shell[data-theme="dark"] .font-settings-section,
+.app-shell[data-theme="dark"] .export-options,
+.app-shell[data-theme="dark"] .mobile-menu-panel,
+.app-shell[data-theme="dark"] .transaction-dialog { border-color: #2d4050; color: #dce6ef; background: #192632; box-shadow: 0 12px 30px rgba(0,0,0,.2); }
+.app-shell[data-theme="dark"] .dialog-head,
+.app-shell[data-theme="dark"] .dialog-actions { border-color: #2d4050; background: rgba(25,38,50,.97); }
+.app-shell[data-theme="dark"] .transaction-table th { border-color: #2d3e4d; color: #a3b1bf; background: #202e3b; }
+.app-shell[data-theme="dark"] .transaction-table td { border-color: #2a3a48; color: #bcc8d3; }
+.app-shell[data-theme="dark"] .transaction-table tbody tr:hover { background: #202f3c; }
+.app-shell[data-theme="dark"] .transaction-description { color: #d7e2ec; }
+.app-shell[data-theme="dark"] .transaction-description small,
+.app-shell[data-theme="dark"] .muted-cell,
+.app-shell[data-theme="dark"] .metric-foot,
+.app-shell[data-theme="dark"] .client-list span { color: #8598a9; }
+.app-shell[data-theme="dark"] .secondary-button,
+.app-shell[data-theme="dark"] .outline-button,
+.app-shell[data-theme="dark"] .danger-outline { border-color: #3a4c5b; color: #c6d5e2; background: #202f3b; }
+.app-shell[data-theme="dark"] .secondary-button:hover:not(:disabled),
+.app-shell[data-theme="dark"] .outline-button:hover:not(:disabled) { border-color: #526b7e; background: #293b49; }
+.app-shell[data-theme="dark"] .text-button { color: #a9c6de; }
+.app-shell[data-theme="dark"] .text-button:hover { background: #243a4d; }
+.app-shell[data-theme="dark"] .quick-icon,
+.app-shell[data-theme="dark"] .empty-icon { color: #a9bfd2; background: #263746; }
+.app-shell[data-theme="dark"] .expense-quick { color: #eca29a; border-color: #573b3a !important; background: #382a2b; }
+.app-shell[data-theme="dark"] .income-quick { color: #81d3a9; border-color: #315444 !important; background: #23372f; }
+.app-shell[data-theme="dark"] .type-switch button { border-color: #35495a; color: #b5c3cf; background: #202f3c; }
+.app-shell[data-theme="dark"] .type-switch button.selected.expense { border-color: #80524d; color: #f0a39b; background: #3d2d2d; }
+.app-shell[data-theme="dark"] .type-switch button.selected.income { border-color: #47765c; color: #8bd5ad; background: #24392f; }
+.app-shell[data-theme="dark"] .quick-actions small,
+.app-shell[data-theme="dark"] .table-empty,
+.app-shell[data-theme="dark"] .dashboard-empty { color: #91a1b0; }
+.app-shell[data-theme="dark"] .table-empty b,
+.app-shell[data-theme="dark"] .dashboard-empty b { color: #c5d1dc; }
+.app-shell[data-theme="dark"] .option-list li,
+.app-shell[data-theme="dark"] .dashboard-controls li,
+.app-shell[data-theme="dark"] .client-list li { border-color: #2c3d4c; color: #c1cfdb; }
+.app-shell[data-theme="dark"] .client-list b { color: #d2dee8; }
+.app-shell[data-theme="dark"] .toolbar,
+.app-shell[data-theme="dark"] .date-filter-row,
+.app-shell[data-theme="dark"] .statement-filter,
+.app-shell[data-theme="dark"] .report-filter { color: #aebdca; }
+.app-shell[data-theme="dark"] input:not([type="checkbox"]):not([type="file"]),
+.app-shell[data-theme="dark"] select,
+.app-shell[data-theme="dark"] textarea,
+.app-shell[data-theme="dark"] .select-wrap,
+.app-shell[data-theme="dark"] .amount-field { border-color: #35495a; color: #d8e3ec; background-color: #202f3c; }
+.app-shell[data-theme="dark"] input::placeholder,
+.app-shell[data-theme="dark"] textarea::placeholder { color: #8497a8; }
+.app-shell[data-theme="dark"] .search-field { border-color: #35495a; color: #9eb0bf; background: #202f3c; box-shadow: inset 2px 4px 8px rgba(0,0,0,.22); }
+.app-shell[data-theme="dark"] .search-field input { color: #e1e9f0; background: transparent; }
+.app-shell[data-theme="dark"] .search-field:focus-within { border-color: #5b8db5; background: #243542; box-shadow: inset 1px 2px 4px rgba(0,0,0,.14), 0 0 0 3px rgba(77,137,183,.22); }
+.app-shell[data-theme="dark"] .select-wrap select,
+.app-shell[data-theme="dark"] .plain-select,
+.app-shell[data-theme="dark"] .form-field > select,
+.app-shell[data-theme="dark"] .font-select,
+.app-shell[data-theme="dark"] .dashboard-size-field select,
+.app-shell[data-theme="dark"] .statement-filter select,
+.app-shell[data-theme="dark"] .report-filter select { border-color: #35495a; color: #d8e3ec; background-color: #202f3c; }
+.app-shell[data-theme="dark"] .bottom-nav { border-color: #2c3d4b; background: rgba(22,34,45,.97); }
+.app-shell[data-theme="dark"] .bottom-nav::before { background: linear-gradient(135deg, #244562, #1d3b55); box-shadow: inset 0 1px 3px rgba(255,255,255,.07), 0 2px 8px rgba(0,0,0,.2); }
+.app-shell[data-theme="dark"] .bottom-nav button { color: #9aabba; }
+.app-shell[data-theme="dark"] .bottom-nav button.active { color: #e3edf5; }
+.app-shell[data-theme="dark"] .mobile-menu-panel .nav-item { color: #bdcbd7; }
+.app-shell[data-theme="dark"] .mobile-menu-panel .nav-item.active { color: #e5eef6; background: #263d50; }
+.app-shell[data-theme="dark"] .back-button { color: #d4e5f1; background: #253847; }
+.app-shell[data-theme="dark"] .offline-banner { border-color: #61413e; color: #e0aca5; background: #362b2c; }
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-switch-track, .theme-switch-thumb, .theme-switch-thumb::before,
+  .dialog-head .back-button, .dialog-head .back-button::before,
+  .bottom-nav::before, .page-content { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
 @media (max-width: 360px) {
   .summary-grid { grid-template-columns: 1fr; }
   .balance-card { grid-column: auto; }

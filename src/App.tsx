@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useLayoutEffect, useRef } from 'react';
 import type { User } from '@supabase/supabase-js';
 import {
-  ArrowDownLeft, ArrowUpLeft, ArchiveRestore, BarChart3, CalendarDays, Check, ChevronDown, CirclePlus, Download,
+  ArrowDownLeft, ArrowUpLeft, ArrowRight, ArchiveRestore, BarChart3, CalendarDays, Check, ChevronDown, CirclePlus, Download,
   FileDown, FileSpreadsheet, Filter, HardHat, Home, ImagePlus, Menu, MoreHorizontal, Pencil,
   Plus, Search, Settings, Trash2, TrendingDown, TrendingUp, Wallet, X, ReceiptText, Users, FileText, ArrowUp, ArrowDown, Upload
 } from 'lucide-react';
@@ -121,6 +121,10 @@ function App() {
 }
 
 function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
+  const [darkMode, setDarkMode] = useState(() => {
+    try { return window.localStorage.getItem('beity-theme') === 'dark'; }
+    catch { return false; }
+  });
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [trashedTransactions, setTrashedTransactions] = useState<Transaction[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -347,7 +351,7 @@ function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
 
   if (!dataLoaded && dataLoading) return <GateShell><p>جارٍ تحميل بيانات الحساب…</p></GateShell>;
   if (dataError) return <GateShell><h1>تعذر الاتصال</h1><p>{dataError}</p><button className="primary-button" onClick={() => void refreshCloudData()}>إعادة المحاولة</button><button className="text-button" onClick={onLock}>قفل النظام</button></GateShell>;
-  return <div className="app-shell" style={{ '--font-primary': fontFamilyFor(fontPreferences.primary), '--font-secondary': fontFamilyFor(fontPreferences.secondary) } as React.CSSProperties}>
+  return <div className="app-shell" data-theme={darkMode ? 'dark' : 'light'} style={{ '--font-primary': fontFamilyFor(fontPreferences.primary), '--font-secondary': fontFamilyFor(fontPreferences.secondary) } as React.CSSProperties}>
     <a className="skip-link" href="#main-content">انتقل إلى المحتوى</a>
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark">{logoUrl ? <img src={logoUrl} alt="" /> : <HardHat size={23} />}</span><span><b>{normalizeDigits(projectName)}</b><small>متابعة بناء البيت</small></span></div>
@@ -360,7 +364,7 @@ function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
     </aside>
 
     <main id="main-content" className="main-area">
-      <header className="topbar"><div className="topbar-heading"><button className="mobile-menu icon-button" aria-label="فتح القائمة" onClick={() => setMobileMenu(!mobileMenu)}><Menu size={20} /></button><div className="breadcrumbs"><span>{normalizeDigits(projectName)}</span><span className="crumb-separator">/</span><strong>{pageTitle}</strong></div></div><div className="topbar-actions"><span className={`today-chip ${isOnline ? 'online-chip' : 'offline-chip'}`}>{isOnline ? 'متصل · محفوظ سحابياً' : 'غير متصل'}</span><span className="today-chip"><CalendarDays size={15} />{dateFormatter.format(new Date())}</span><button className="primary-button top-add" onClick={() => showCreate()}><Plus size={17} /> إضافة عملية</button></div></header>
+      <header className="topbar"><div className="topbar-heading"><button className="mobile-menu icon-button" aria-label="فتح القائمة" onClick={() => setMobileMenu(!mobileMenu)}><Menu size={20} /></button><div className="breadcrumbs"><span>{normalizeDigits(projectName)}</span><span className="crumb-separator">/</span><strong>{pageTitle}</strong></div></div><div className="topbar-actions"><span className={`today-chip ${isOnline ? 'online-chip' : 'offline-chip'}`}>{isOnline ? 'متصل · محفوظ سحابياً' : 'غير متصل'}</span><span className="today-chip"><CalendarDays size={15} />{dateFormatter.format(new Date())}</span><label className="theme-switch" title={darkMode ? 'التبديل إلى الوضع الفاتح' : 'التبديل إلى الوضع الداكن'}><input type="checkbox" role="switch" aria-label={darkMode ? 'الوضع الداكن مفعّل، التبديل إلى الفاتح' : 'التبديل إلى الوضع الداكن'} checked={darkMode} onChange={(event) => { const next = event.target.checked; setDarkMode(next); try { window.localStorage.setItem('beity-theme', next ? 'dark' : 'light'); } catch { /* Keep the selected theme for the current session. */ } }} /><span className="theme-switch-track" aria-hidden="true"><span className="theme-switch-thumb" /></span></label><button className="primary-button top-add" onClick={() => showCreate()}><Plus size={17} /> إضافة عملية</button></div></header>
       {!isOnline && <div className="offline-banner" role="status">لا يوجد اتصال بالإنترنت. البيانات المعروضة قد لا تشمل آخر التغييرات، وسيظهر خطأ واضح عند تعذر الحفظ.</div>}
       {mobileMenu && <div className="mobile-menu-panel"><div className="mobile-menu-head"><b>بيتي</b><button className="icon-button" onClick={() => setMobileMenu(false)} aria-label="إغلاق القائمة"><X size={18} /></button></div>{navItems.map(({ id, label, icon: Icon }) => <button key={id} className={`nav-item ${page === id ? 'active' : ''}`} onClick={() => changePage(id)}><Icon size={18} /><span>{label}</span></button>)}</div>}
 
@@ -402,7 +406,7 @@ function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
       <footer className="app-footer">بيتي <span>·</span> متابعة أموال بناء البيت</footer>
     </main>
 
-    <nav className="bottom-nav" aria-label="التنقل السريع">{navItems.map(({ id, label, icon: Icon }) => <button key={id} onClick={() => changePage(id)} className={page === id ? 'active' : ''} aria-current={page === id ? 'page' : undefined}><Icon size={19} /><span>{label}</span></button>)}</nav>
+    <nav className="bottom-nav" aria-label="التنقل السريع" style={{ '--active-tab': navItems.findIndex((item) => item.id === page) } as React.CSSProperties}>{navItems.map(({ id, label, icon: Icon }) => <button key={id} onClick={() => changePage(id)} className={page === id ? 'active' : ''} aria-current={page === id ? 'page' : undefined}><Icon size={19} /><span>{label}</span></button>)}</nav>
     {dialog && <TransactionDialog key={dialog.record?.id ?? `new-${dialog.type ?? ''}`} mode={dialog.mode} record={dialog.record} initialType={dialog.type} categories={categories} stages={stages} clients={clients} user={user} projectId={projectId} onClose={() => setDialog(null)} onSaved={onSaved} onDeleted={() => { setDialog(null); setToast('نُقلت العملية إلى المهملات ويمكن استعادتها'); void refreshCloudData(); }} onEdit={() => setDialog({ mode: 'edit', record: dialog.record })} />}
     <div className="toast" role="status" aria-live="polite" aria-atomic="true">{toast}</div>
   </div>;
@@ -557,7 +561,7 @@ function TransactionDialog({ mode, record, initialType, categories, stages, clie
   const close = () => { if (!busy) onClose(); };
 
   return <dialog ref={dialogRef} className="transaction-dialog" onCancel={(event) => { event.preventDefault(); close(); }} onClick={(event) => { if (event.target === dialogRef.current) close(); }} aria-labelledby="transaction-dialog-title">
-    <div className="dialog-head"><div><span className={`dialog-type-icon ${type}`}>{type === 'income' ? <ArrowDownLeft size={18} /> : <ArrowUpLeft size={18} />}</span><div><h2 id="transaction-dialog-title">{modalTitle}</h2><p>{isDetail ? 'معلومات العملية المالية' : 'أدخل تفاصيل العملية'}</p></div></div><button className="icon-button" onClick={close} aria-label="إغلاق النافذة"><X size={19} /></button></div>
+    <div className="dialog-head"><div><span className={`dialog-type-icon ${type}`}>{type === 'income' ? <ArrowDownLeft size={18} /> : <ArrowUpLeft size={18} />}</span><div><h2 id="transaction-dialog-title">{modalTitle}</h2><p>{isDetail ? 'معلومات العملية المالية' : 'أدخل تفاصيل العملية'}</p></div></div><button className="icon-button back-button" onClick={close} aria-label="الرجوع وإغلاق النافذة"><ArrowRight size={19} /></button></div>
     {isDetail && record ? <div className="details-content">
       <div className={`details-amount ${record.type}`}><span>{record.type === 'income' ? 'مبلغ القبض' : 'مبلغ الصرف'}</span><strong dir="ltr"><bdi>{formatAmount(record.amount)}</bdi><small>د.ع</small></strong></div>
       <div className="details-grid"><DetailItem label="البيان" value={normalizeDigits(record.description)} /><DetailItem label="التاريخ" value={formatDate(record.date)} /><DetailItem label="العميل" value={normalizeDigits(clients.find((item) => item.id === record.clientId)?.name ?? '—')} /><DetailItem label="التصنيف" value={normalizeDigits(categories.find((item) => item.id === record.categoryId)?.name ?? '—')} /><DetailItem label="المرحلة" value={normalizeDigits(stages.find((item) => item.id === record.stageId)?.name ?? '—')} /><DetailItem label={record.type === 'income' ? 'المصدر / الشخص' : 'المورد / الشخص'} value={normalizeDigits(record.person || '—')} /><DetailItem label="الملاحظات" value={normalizeDigits(record.notes || '—')} wide /></div>
