@@ -6,9 +6,12 @@ export interface TransactionFilters {
   type: TransactionType | 'all';
   categoryId?: string;
   stageId?: string;
+  clientId?: string;
+  minAmount?: string;
+  maxAmount?: string;
   from?: string;
   to?: string;
-  sort: 'newest' | 'oldest';
+  sort: 'newest' | 'oldest' | 'highest' | 'lowest';
 }
 
 function searchableText(transaction: Transaction): string {
@@ -22,10 +25,17 @@ export function filterAndSortTransactions(transactions: Transaction[], filters: 
     if (filters.type !== 'all' && transaction.type !== filters.type) return false;
     if (filters.categoryId && transaction.categoryId !== filters.categoryId) return false;
     if (filters.stageId && transaction.stageId !== filters.stageId) return false;
+    if (filters.clientId && transaction.clientId !== filters.clientId) return false;
+    const minimum = filters.minAmount ? Number(normalizeDigits(filters.minAmount).replace(/,/g, '')) : undefined;
+    const maximum = filters.maxAmount ? Number(normalizeDigits(filters.maxAmount).replace(/,/g, '')) : undefined;
+    if (minimum !== undefined && Number.isFinite(minimum) && transaction.amount < minimum) return false;
+    if (maximum !== undefined && Number.isFinite(maximum) && transaction.amount > maximum) return false;
     if (filters.from && transaction.date < filters.from) return false;
     if (filters.to && transaction.date > filters.to) return false;
     return true;
   }).sort((a, b) => {
+    if (filters.sort === 'highest') return b.amount - a.amount || b.date.localeCompare(a.date);
+    if (filters.sort === 'lowest') return a.amount - b.amount || b.date.localeCompare(a.date);
     const order = a.date.localeCompare(b.date) || a.createdAt - b.createdAt;
     return filters.sort === 'oldest' ? order : -order;
   });

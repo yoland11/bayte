@@ -3,7 +3,7 @@ import type { User } from '@supabase/supabase-js';
 import {
   ArrowDownLeft, ArrowUpLeft, ArrowRight, ArchiveRestore, BarChart3, CalendarDays, Check, ChevronDown, CirclePlus, Download,
   FileDown, FileSpreadsheet, Filter, HardHat, Home, ImagePlus, Menu, MoreHorizontal, Pencil,
-  Plus, Search, Settings, Trash2, TrendingDown, TrendingUp, Wallet, X, ReceiptText, Users, FileText, ArrowUp, ArrowDown, Upload
+  Plus, Search, Settings, Trash2, TrendingDown, TrendingUp, Wallet, X, ReceiptText, Users, FileText, ArrowUp, ArrowDown, Upload, Copy, Printer, SlidersHorizontal
 } from 'lucide-react';
 import { createLocalBackup } from './lib/db';
 import { decodeBackup, encodeBackup } from './lib/backup';
@@ -74,6 +74,23 @@ function InlineSpinner() {
   return <svg className="uiverse-spinner" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9" /></svg>;
 }
 
+const transactionViewStorageKey = (userId: string) => `beity-transaction-view:${userId}`;
+function loadTransactionView(userId: string) {
+  const defaults = { filters: { query: '', type: 'all' as const, sort: 'newest' as const, ...getPeriodBounds('month') }, period: 'month' as Period, from: '', to: '', compact: false };
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(transactionViewStorageKey(userId)) ?? 'null');
+    if (!parsed || typeof parsed !== 'object') return defaults;
+    const filters = parsed.filters && typeof parsed.filters === 'object' ? parsed.filters : {};
+    const period = ['today', 'week', 'month', 'year', 'custom', 'all'].includes(parsed.period) ? parsed.period as Period : defaults.period;
+    const sort = ['newest', 'oldest', 'highest', 'lowest'].includes(filters.sort) ? filters.sort : defaults.filters.sort;
+    const bounds = getPeriodBounds(period, new Date(), String(parsed.from ?? ''), String(parsed.to ?? ''));
+    return {
+      filters: { ...defaults.filters, ...filters, query: String(filters.query ?? ''), sort, type: ['all', 'income', 'expense'].includes(filters.type) ? filters.type : 'all', ...bounds } as TransactionFilters,
+      period, from: String(parsed.from ?? ''), to: String(parsed.to ?? ''), compact: parsed.compact === true
+    };
+  } catch { return defaults; }
+}
+
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [pinUnlocked, setPinUnlocked] = useState(false);
@@ -125,6 +142,7 @@ function App() {
 }
 
 function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
+  const savedTransactionView = useMemo(() => loadTransactionView(user.id), [user.id]);
   const [darkMode, setDarkMode] = useState(() => {
     try { return window.localStorage.getItem('beity-theme') === 'dark'; }
     catch { return false; }
@@ -160,18 +178,20 @@ function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
     return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update); window.removeEventListener('focus', update); };
   }, [user.id]);
   const [page, setPage] = useState<Page>('home');
-  const [dialog, setDialog] = useState<{ mode: 'create' | 'edit' | 'detail'; record?: Transaction; type?: TransactionType } | null>(null);
+  const [dialog, setDialog] = useState<{ mode: 'create' | 'edit' | 'detail' | 'duplicate'; record?: Transaction; type?: TransactionType } | null>(null);
   const [toast, setToast] = useState('');
   const [mobileMenu, setMobileMenu] = useState(false);
-  const [filters, setFilters] = useState<TransactionFilters>(() => ({ query: '', type: 'all', sort: 'newest', ...getPeriodBounds('month') }));
+  const [filters, setFilters] = useState<TransactionFilters>(() => savedTransactionView.filters);
+  const [compactTransactions, setCompactTransactions] = useState(() => savedTransactionView.compact);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
-  const [period, setPeriod] = useState<Period>('month');
+  const [period, setPeriod] = useState<Period>(() => savedTransactionView.period);
   const [reportType, setReportType] = useState<TransactionFilters['type']>('all');
   const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
   const [exportError, setExportError] = useState('');
-  const [periodFrom, setPeriodFrom] = useState('');
-  const [periodTo, setPeriodTo] = useState('');
+  const [periodFrom, setPeriodFrom] = useState(() => savedTransactionView.from);
+  const [periodTo, setPeriodTo] = useState(() => savedTransactionView.to);
   const [fontPreferences, setFontPreferences] = useState<FontPreferences>(() => {
     try { return parseFontPreferences(window.localStorage.getItem(FONT_PREFERENCES_STORAGE_KEY)); }
     catch { return DEFAULT_FONT_PREFERENCES; }
@@ -198,11 +218,34 @@ function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
+  useEffect(() => {
+    try { window.localStorage.setItem(transactionViewStorageKey(user.id), JSON.stringify({ filters, period, from: periodFrom, to: periodTo, compact: compactTransactions })); }
+    catch { /* The current filter choices remain usable when browser storage is unavailable. */ }
+  }, [user.id, filters, period, periodFrom, periodTo, compactTransactions]);
+
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent) => {
+      if (page !== 'transactions' || dialog) return;
+      const target = event.target as HTMLElement | null;
+      const typing = !!target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+      if ((event.key === '/' && !typing) || ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k')) {
+        event.preventDefault(); searchInputRef.current?.focus();
+      } else if (event.key === 'Escape' && filters.query) {
+        setFilters((current) => ({ ...current, query: '' }));
+      }
+    };
+    window.addEventListener('keydown', onShortcut);
+    return () => window.removeEventListener('keydown', onShortcut);
+  }, [page, dialog, filters.query]);
+
   const summary = useMemo(() => summarizeTransactions(transactions), [transactions]);
   const byId = useMemo(() => new Map(categories.map((item) => [item.id, normalizeDigits(item.name)])), [categories]);
   const stageById = useMemo(() => new Map(stages.map((item) => [item.id, normalizeDigits(item.name)])), [stages]);
   const clientById = useMemo(() => new Map(clients.map((item) => [item.id, normalizeDigits(item.name)])), [clients]);
   const visibleTransactions = useMemo(() => filterAndSortTransactions(transactions, filters), [transactions, filters]);
+  const visibleSummary = useMemo(() => summarizeTransactions(visibleTransactions), [visibleTransactions]);
+  const selectedTransactions = useMemo(() => visibleTransactions.filter((record) => selectedTransactionIds.includes(record.id)), [visibleTransactions, selectedTransactionIds]);
+  const selectedSummary = useMemo(() => summarizeTransactions(selectedTransactions), [selectedTransactions]);
   useEffect(() => {
     const visibleIds = new Set(visibleTransactions.map((record) => record.id));
     setSelectedTransactionIds((selected) => selected.filter((id) => visibleIds.has(id)));
@@ -350,7 +393,24 @@ function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
   }
 
   const reportLabel = period === 'custom' ? `${periodFrom || '—'} — ${periodTo || '—'}` : ({ today: 'اليوم', week: 'هذا الأسبوع', month: 'هذا الشهر', year: 'هذه السنة', all: 'كل الفترات', custom: 'نطاق مخصص' } as const)[period];
-  const transactionExportLabel = [period === 'all' ? 'كل الفترات' : reportLabel, filters.type === 'all' ? '' : `النوع: ${filters.type === 'income' ? 'قبض' : 'صرف'}`, filters.categoryId ? `التصنيف: ${byId.get(filters.categoryId) ?? ''}` : '', filters.stageId ? `المرحلة: ${stageById.get(filters.stageId) ?? ''}` : '', filters.query ? `بحث: ${filters.query}` : ''].filter(Boolean).join(' · ');
+  const transactionExportLabel = [period === 'all' ? 'كل الفترات' : reportLabel, filters.type === 'all' ? '' : `النوع: ${filters.type === 'income' ? 'قبض' : 'صرف'}`, filters.categoryId ? `التصنيف: ${byId.get(filters.categoryId) ?? ''}` : '', filters.stageId ? `المرحلة: ${stageById.get(filters.stageId) ?? ''}` : '', filters.clientId ? `العميل: ${clientById.get(filters.clientId) ?? ''}` : '', filters.minAmount ? `من مبلغ: ${filters.minAmount}` : '', filters.maxAmount ? `إلى مبلغ: ${filters.maxAmount}` : '', filters.query ? `بحث: ${filters.query}` : ''].filter(Boolean).join(' · ');
+  const hasActiveTransactionFilters = !!(filters.query || filters.type !== 'all' || filters.categoryId || filters.stageId || filters.clientId || filters.from || filters.to || filters.minAmount || filters.maxAmount);
+  const resetTransactionFilters = () => { setPeriod('all'); setPeriodFrom(''); setPeriodTo(''); setFilters({ query: '', type: 'all', sort: 'newest' }); };
+  function exportVisibleCsv() {
+    const csvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const rows = [
+      ['النوع', 'البيان', 'العميل', 'الشخص', 'التصنيف', 'المرحلة', 'التاريخ', 'المبلغ', 'الملاحظات'],
+      ...visibleTransactions.map((record) => [record.type === 'income' ? 'قبض' : 'صرف', normalizeDigits(record.description), clientById.get(record.clientId ?? '') ?? '', normalizeDigits(record.person ?? ''), byId.get(record.categoryId ?? '') ?? '', stageById.get(record.stageId ?? '') ?? '', record.date, formatAmount(record.amount), normalizeDigits(record.notes ?? '')])
+    ];
+    const blob = new Blob([`\uFEFF${rows.map((row) => row.map(csvCell).join(',')).join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob); const link = document.createElement('a');
+    link.href = url; link.download = `بيتي-العمليات-${todayISO()}.csv`; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setToast('تم تنزيل العمليات بصيغة CSV');
+  }
+  async function copySelectedSummary() {
+    try { await navigator.clipboard.writeText(`عدد العمليات: ${formatAmount(selectedTransactions.length)}\nإجمالي القبض: ${formatAmount(selectedSummary.income)} د.ع\nإجمالي الصرف: ${formatAmount(selectedSummary.expenses)} د.ع\nالرصيد: ${formatAmount(selectedSummary.balance)} د.ع`); setToast('تم نسخ ملخص العمليات المحددة'); }
+    catch { setToast('تعذر النسخ؛ تحقق من صلاحية الحافظة في المتصفح'); }
+  }
   const pageTitle = navItems.find((item) => item.id === page)?.label ?? 'الرئيسية';
 
   if (!dataLoaded && dataLoading) return <GateShell><p>جارٍ تحميل بيانات الحساب…</p></GateShell>;
@@ -386,11 +446,17 @@ function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
         <section className="quick-actions"><div><span className="quick-icon"><CirclePlus size={19} /></span><div><b>تسجيل حركة</b></div></div><div className="quick-buttons"><button className="expense-quick" onClick={() => showCreate('expense')}><ArrowUpLeft size={16} />صرف</button><button className="income-quick" onClick={() => showCreate('income')}><ArrowDownLeft size={16} />قبض</button></div></section>
       </section>}
 
-      {page === 'transactions' && <section className="page-content">
+      {page === 'transactions' && <section className="page-content transaction-print-region">
         <div className="page-heading"><div><p className="eyebrow">السجل المالي</p><h1>العمليات</h1></div><button className="primary-button" onClick={() => showCreate()}><Plus size={17} />إضافة عملية</button></div>
-        <section className="content-card transactions-card"><div className="toolbar"><label className="search-field"><Search size={17} /><input value={filters.query} onChange={(e) => setFilters({ ...filters, query: normalizeDigits(e.target.value) })} placeholder="بحث بالبيان أو الشخص أو الملاحظات" aria-label="بحث في العمليات" /></label><div className="toolbar-filters"><label className="select-wrap"><Filter size={16} /><select aria-label="تصفية حسب النوع" value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value as TransactionFilters['type'] })}><option value="all">كل العمليات</option><option value="income">قبض</option><option value="expense">صرف</option></select></label><select className="plain-select" aria-label="تصفية حسب التصنيف" value={filters.categoryId ?? ''} onChange={(e) => setFilters({ ...filters, categoryId: e.target.value || undefined })}><option value="">كل التصنيفات</option>{categories.map((item) => <option key={item.id} value={item.id}>{normalizeDigits(item.name)}</option>)}</select><select className="plain-select" aria-label="تصفية حسب المرحلة" value={filters.stageId ?? ''} onChange={(e) => setFilters({ ...filters, stageId: e.target.value || undefined })}><option value="">كل المراحل</option>{stages.map((item) => <option key={item.id} value={item.id}>{normalizeDigits(item.name)}</option>)}</select><select className="plain-select sort-select" aria-label="ترتيب العمليات" value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value as TransactionFilters['sort'] })}><option value="newest">الأحدث</option><option value="oldest">الأقدم</option></select></div></div>
-        <div className="date-filter-row"><span>الفترة</span><select className="plain-select" aria-label="فترة العمليات" value={period} onChange={(e) => { const next = e.target.value as Period; setPeriod(next); setFilters((current) => ({ query: current.query, type: current.type, categoryId: current.categoryId, stageId: current.stageId, sort: current.sort, ...getPeriodBounds(next, new Date(), periodFrom, periodTo) })); }}><option value="all">كل الفترات</option><option value="today">اليوم</option><option value="week">هذا الأسبوع</option><option value="month">هذا الشهر</option><option value="year">هذه السنة</option><option value="custom">نطاق مخصص</option></select>{period === 'custom' && <><label>من<input type="date" value={periodFrom} onChange={(e) => { setPeriodFrom(e.target.value); setFilters({ ...filters, ...getPeriodBounds('custom', new Date(), e.target.value, periodTo) }); }} /></label><label>إلى<input type="date" value={periodTo} onChange={(e) => { setPeriodTo(e.target.value); setFilters({ ...filters, ...getPeriodBounds('custom', new Date(), periodFrom, e.target.value) }); }} /></label></>}<span className="result-count">{formatAmount(visibleTransactions.length)} عملية</span><button className="outline-button export-small" disabled={!visibleTransactions.length && !selectionMode} onClick={() => { setSelectionMode((mode) => !mode); if (selectionMode) setSelectedTransactionIds([]); }}><Check size={15} />{selectionMode ? 'إلغاء التحديد' : 'تحديد'}</button>{selectionMode && <><span className="selection-count" role="status">المحدد: {formatAmount(selectedTransactionIds.length)}</span><button className="danger-outline export-small" disabled={!selectedTransactionIds.length} onClick={() => void moveSelectedToTrash()}><Trash2 size={15} />مسح المحدد</button></>}<button className="outline-button export-small" disabled={!!exporting} onClick={() => exportFile('excel', visibleTransactions, transactionExportLabel)}>{exporting === 'excel' ? <><InlineSpinner />جاري الإنشاء…</> : <><FileSpreadsheet size={15} />تصدير جدول البيانات</>}</button><button className="outline-button export-small" disabled={!!exporting} onClick={() => exportFile('pdf', visibleTransactions, transactionExportLabel, undefined, { title: 'كشف حساب عام', allRecords: transactions, range: { from: filters.from, to: filters.to } })}>{exporting === 'pdf' ? <><InlineSpinner />جاري الإنشاء…</> : <><FileDown size={15} />تصدير تقرير PDF</>}</button></div>
-          <TransactionTable records={visibleTransactions} categories={byId} stages={stageById} onDetails={(record) => setDialog({ mode: 'detail', record })} emptyText={filters.query || filters.type !== 'all' || filters.categoryId || filters.stageId ? 'لا توجد نتائج تطابق البحث' : 'لا توجد عمليات بعد'} onAdd={() => showCreate()} selectable={selectionMode} selectedIds={selectedTransactionIds} onToggleSelection={(id) => setSelectedTransactionIds((selected) => toggleSelection(selected, id))} onSelectVisible={(selected) => setSelectedTransactionIds((current) => setVisibleSelection(current, visibleTransactions.map((record) => record.id), selected))} />
+        <section className={`content-card transactions-card${compactTransactions ? ' compact-transactions' : ''}`}><div className="toolbar"><label className="search-field"><Search size={17} /><input ref={searchInputRef} value={filters.query} onChange={(e) => setFilters({ ...filters, query: normalizeDigits(e.target.value) })} placeholder="بحث بالبيان أو الشخص أو الملاحظات · / أو ⌘K" aria-label="بحث في العمليات" />{filters.query && <button className="search-clear" onClick={() => setFilters((current) => ({ ...current, query: '' }))} aria-label="مسح البحث"><X size={15} /></button>}</label><div className="toolbar-filters"><label className="select-wrap"><Filter size={16} /><select aria-label="تصفية حسب النوع" value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value as TransactionFilters['type'] })}><option value="all">كل العمليات</option><option value="income">قبض</option><option value="expense">صرف</option></select></label><select className="plain-select" aria-label="تصفية حسب التصنيف" value={filters.categoryId ?? ''} onChange={(e) => setFilters({ ...filters, categoryId: e.target.value || undefined })}><option value="">كل التصنيفات</option>{categories.map((item) => <option key={item.id} value={item.id}>{normalizeDigits(item.name)}</option>)}</select><select className="plain-select" aria-label="تصفية حسب المرحلة" value={filters.stageId ?? ''} onChange={(e) => setFilters({ ...filters, stageId: e.target.value || undefined })}><option value="">كل المراحل</option>{stages.map((item) => <option key={item.id} value={item.id}>{normalizeDigits(item.name)}</option>)}</select><select className="plain-select" aria-label="تصفية حسب العميل" value={filters.clientId ?? ''} onChange={(e) => setFilters({ ...filters, clientId: e.target.value || undefined })}><option value="">كل العملاء</option>{clients.map((item) => <option key={item.id} value={item.id}>{normalizeDigits(item.name)}</option>)}</select><select className="plain-select sort-select" aria-label="ترتيب العمليات" value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value as TransactionFilters['sort'] })}><option value="newest">الأحدث</option><option value="oldest">الأقدم</option><option value="highest">الأعلى مبلغاً</option><option value="lowest">الأقل مبلغاً</option></select></div></div>
+        <div className="date-filter-row"><span>الفترة</span><select className="plain-select" aria-label="فترة العمليات" value={period} onChange={(e) => { const next = e.target.value as Period; const bounds = getPeriodBounds(next, new Date(), periodFrom, periodTo); setPeriod(next); setFilters((current) => ({ ...current, ...bounds, from: bounds.from, to: bounds.to })); }}>{(['all', 'today', 'week', 'month', 'year', 'custom'] as Period[]).map((key) => <option key={key} value={key}>{({ all: 'كل الفترات', today: 'اليوم', week: 'هذا الأسبوع', month: 'هذا الشهر', year: 'هذه السنة', custom: 'نطاق مخصص' })[key]}</option>)}</select>{period === 'custom' && <><label>من<input type="date" lang="en" dir="ltr" value={periodFrom} onChange={(e) => { const value = normalizeDigits(e.target.value); setPeriodFrom(value); setFilters((current) => ({ ...current, ...getPeriodBounds('custom', new Date(), value, periodTo) })); }} /></label><label>إلى<input type="date" lang="en" dir="ltr" value={periodTo} onChange={(e) => { const value = normalizeDigits(e.target.value); setPeriodTo(value); setFilters((current) => ({ ...current, ...getPeriodBounds('custom', new Date(), periodFrom, value) })); }} /></label></>}
+          <details className="amount-filter-details"><summary><SlidersHorizontal size={14} />المبلغ</summary><label>من<input inputMode="numeric" dir="ltr" placeholder="0" value={filters.minAmount ?? ''} onChange={(e) => setFilters((current) => ({ ...current, minAmount: normalizeDigits(e.target.value).replace(/[^0-9]/g, '') || undefined }))} /></label><label>إلى<input inputMode="numeric" dir="ltr" placeholder="—" value={filters.maxAmount ?? ''} onChange={(e) => setFilters((current) => ({ ...current, maxAmount: normalizeDigits(e.target.value).replace(/[^0-9]/g, '') || undefined }))} /></label></details>
+          <span className="result-count" role="status">{formatAmount(visibleTransactions.length)} عملية</span><button className="outline-button export-small" disabled={!visibleTransactions.length && !selectionMode} onClick={() => { setSelectionMode((mode) => !mode); if (selectionMode) setSelectedTransactionIds([]); }}><Check size={15} />{selectionMode ? 'إلغاء التحديد' : 'تحديد'}</button>{selectionMode && <><span className="selection-count" role="status">المحدد: {formatAmount(selectedTransactionIds.length)} · قبض {formatAmount(selectedSummary.income)} · صرف {formatAmount(selectedSummary.expenses)}</span><button className="outline-button export-small" disabled={!selectedTransactionIds.length} onClick={() => void copySelectedSummary()}><Copy size={14} />نسخ ملخص المحدد</button><button className="danger-outline export-small" disabled={!selectedTransactionIds.length} onClick={() => void moveSelectedToTrash()}><Trash2 size={15} />مسح المحدد</button></>}
+          <label className="density-toggle"><input type="checkbox" checked={compactTransactions} onChange={(e) => setCompactTransactions(e.target.checked)} />مضغوط</label><button className="outline-button export-small" disabled={!visibleTransactions.length} onClick={exportVisibleCsv}><Download size={14} />CSV</button><button className="outline-button export-small print-control" disabled={!visibleTransactions.length} onClick={() => window.print()}><Printer size={14} />طباعة</button><button className="outline-button export-small" disabled={!!exporting} onClick={() => exportFile('excel', visibleTransactions, transactionExportLabel)}>{exporting === 'excel' ? <><InlineSpinner />جاري الإنشاء…</> : <><FileSpreadsheet size={15} />Excel</>}</button><button className="outline-button export-small" disabled={!!exporting} onClick={() => exportFile('pdf', visibleTransactions, transactionExportLabel, undefined, { title: 'كشف حساب عام', allRecords: transactions, range: { from: filters.from, to: filters.to } })}>{exporting === 'pdf' ? <><InlineSpinner />جاري الإنشاء…</> : <><FileDown size={15} />PDF</>}</button>
+        </div>
+        {hasActiveTransactionFilters && <div className="active-filter-chips"><span>التصفية الحالية</span>{filters.query && <button onClick={() => setFilters((current) => ({ ...current, query: '' }))}>بحث: {filters.query}<X size={13} /></button>}{filters.type !== 'all' && <button onClick={() => setFilters((current) => ({ ...current, type: 'all' }))}>{filters.type === 'income' ? 'قبض' : 'صرف'}<X size={13} /></button>}{filters.categoryId && <button onClick={() => setFilters((current) => ({ ...current, categoryId: undefined }))}>{byId.get(filters.categoryId)}<X size={13} /></button>}{filters.stageId && <button onClick={() => setFilters((current) => ({ ...current, stageId: undefined }))}>{stageById.get(filters.stageId)}<X size={13} /></button>}{filters.clientId && <button onClick={() => setFilters((current) => ({ ...current, clientId: undefined }))}>{clientById.get(filters.clientId)}<X size={13} /></button>}{(filters.from || filters.to) && <button onClick={() => { setPeriod('all'); setPeriodFrom(''); setPeriodTo(''); setFilters((current) => ({ ...current, from: undefined, to: undefined })); }}>{({ all: 'كل الفترات', today: 'اليوم', week: 'هذا الأسبوع', month: 'هذا الشهر', year: 'هذه السنة', custom: 'النطاق المخصص' })[period]}<X size={13} /></button>}{filters.minAmount && <button onClick={() => setFilters((current) => ({ ...current, minAmount: undefined }))}>من {filters.minAmount}<X size={13} /></button>}{filters.maxAmount && <button onClick={() => setFilters((current) => ({ ...current, maxAmount: undefined }))}>إلى {filters.maxAmount}<X size={13} /></button>}<button className="clear-all-filters" onClick={resetTransactionFilters}>مسح الكل</button></div>}
+        <div className="filtered-summary"><span>نتائج التصفية</span><strong>القبض <bdi dir="ltr">{formatAmount(visibleSummary.income)}</bdi></strong><strong>الصرف <bdi dir="ltr">{formatAmount(visibleSummary.expenses)}</bdi></strong><strong>الصافي <bdi dir="ltr">{formatAmount(visibleSummary.balance)}</bdi></strong></div>
+          <TransactionTable records={visibleTransactions} categories={byId} stages={stageById} onDetails={(record) => setDialog({ mode: 'detail', record })} emptyText={filters.query || filters.type !== 'all' || filters.categoryId || filters.stageId || filters.clientId || filters.minAmount || filters.maxAmount ? 'لا توجد نتائج تطابق البحث' : 'لا توجد عمليات بعد'} onAdd={() => showCreate()} selectable={selectionMode} selectedIds={selectedTransactionIds} onToggleSelection={(id) => setSelectedTransactionIds((selected) => toggleSelection(selected, id))} onSelectVisible={(selected) => setSelectedTransactionIds((current) => setVisibleSelection(current, visibleTransactions.map((record) => record.id), selected))} compact={compactTransactions} />
         </section>
       </section>}
 
@@ -411,7 +477,7 @@ function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
     </main>
 
     <nav className="bottom-nav" aria-label="التنقل السريع" style={{ '--active-tab': navItems.findIndex((item) => item.id === page) } as React.CSSProperties}>{navItems.map(({ id, label, icon: Icon }) => <button key={id} onClick={() => changePage(id)} className={page === id ? 'active' : ''} aria-current={page === id ? 'page' : undefined}><Icon size={19} /><span>{label}</span></button>)}</nav>
-    {dialog && <TransactionDialog key={dialog.record?.id ?? `new-${dialog.type ?? ''}`} mode={dialog.mode} record={dialog.record} initialType={dialog.type} categories={categories} stages={stages} clients={clients} user={user} projectId={projectId} onClose={() => setDialog(null)} onSaved={onSaved} onDeleted={() => { setDialog(null); setToast('نُقلت العملية إلى المهملات ويمكن استعادتها'); void refreshCloudData(); }} onEdit={() => setDialog({ mode: 'edit', record: dialog.record })} />}
+    {dialog && <TransactionDialog key={`${dialog.mode}-${dialog.record?.id ?? `new-${dialog.type ?? ''}`}`} mode={dialog.mode} record={dialog.record} initialType={dialog.type} categories={categories} stages={stages} clients={clients} user={user} projectId={projectId} onClose={() => setDialog(null)} onSaved={onSaved} onToast={setToast} onDeleted={() => { setDialog(null); setToast('نُقلت العملية إلى المهملات ويمكن استعادتها'); void refreshCloudData(); }} onEdit={() => setDialog({ mode: 'edit', record: dialog.record })} onDuplicate={() => dialog.record && setDialog({ mode: 'duplicate', record: dialog.record })} />}
     <div className="toast" role="status" aria-live="polite" aria-atomic="true">{toast}</div>
   </div>;
 }
@@ -464,10 +530,10 @@ function SummaryTile({ label, value, kind }: { label: string; value: number; kin
   return <article className={`summary-tile ${kind}`}><span>{label}</span><strong dir="ltr"><bdi>{formatAmount(value)}</bdi><small>د.ع</small></strong></article>;
 }
 
-function TransactionTable({ records, categories, stages, onDetails, emptyText = 'لا توجد عمليات بعد', onAdd, selectable = false, selectedIds = [], onToggleSelection, onSelectVisible }: { records: Transaction[]; categories: Map<string, string>; stages: Map<string, string>; onDetails: (record: Transaction) => void; emptyText?: string; onAdd?: () => void; selectable?: boolean; selectedIds?: string[]; onToggleSelection?: (id: string) => void; onSelectVisible?: (selected: boolean) => void }) {
+function TransactionTable({ records, categories, stages, onDetails, emptyText = 'لا توجد عمليات بعد', onAdd, selectable = false, selectedIds = [], onToggleSelection, onSelectVisible, compact = false }: { records: Transaction[]; categories: Map<string, string>; stages: Map<string, string>; onDetails: (record: Transaction) => void; emptyText?: string; onAdd?: () => void; selectable?: boolean; selectedIds?: string[]; onToggleSelection?: (id: string) => void; onSelectVisible?: (selected: boolean) => void; compact?: boolean }) {
   if (records.length === 0) return <div className="table-empty"><div className="empty-icon"><ReceiptText size={25} /></div><b>{emptyText}</b>{onAdd && emptyText === 'لا توجد عمليات بعد' && <button className="text-button" onClick={onAdd}><Plus size={16} />إضافة عملية</button>}</div>;
   const allSelected = records.every((record) => selectedIds.includes(record.id));
-  return <div className="table-scroll"><table className={`transaction-table${selectable ? ' selectable-table' : ''}`}><thead><tr>{selectable && <th className="selection-cell"><input type="checkbox" checked={allSelected} onChange={(event) => onSelectVisible?.(event.currentTarget.checked)} aria-label="تحديد كل العمليات الظاهرة" /></th>}<th>النوع</th><th>البيان</th><th>التصنيف</th><th>المرحلة</th><th>التاريخ</th><th>المبلغ</th><th><span className="sr-only">تفاصيل</span></th></tr></thead><tbody>{records.map((record) => <tr key={record.id}>{selectable && <td className="selection-cell"><input type="checkbox" checked={selectedIds.includes(record.id)} onChange={() => onToggleSelection?.(record.id)} aria-label={`تحديد عملية: ${normalizeDigits(record.description)}`} /></td>}<td><span className={`type-badge ${record.type}`}><span />{record.type === 'income' ? 'قبض' : 'صرف'}</span></td><td><div className="transaction-description">{normalizeDigits(record.description)}{record.attachmentId && <span className="attachment-mark" title="توجد فاتورة أو صورة" aria-label="توجد فاتورة أو صورة"><ImagePlus size={13} /></span>}<small>{normalizeDigits(record.person || 'بدون اسم')}</small></div></td><td>{normalizeDigits(categories.get(record.categoryId ?? '') ?? '—')}</td><td>{normalizeDigits(stages.get(record.stageId ?? '') ?? '—')}</td><td><span className="date-cell">{compactDate.format(new Date(`${record.date}T12:00:00`))}</span></td><td><strong className={`table-amount ${record.type}`} dir="ltr"><bdi>{formatAmount(record.amount)}</bdi><small>د.ع</small></strong></td><td><button className="row-open" onClick={(e) => { e.stopPropagation(); onDetails(record); }} aria-label={`عرض تفاصيل: ${normalizeDigits(record.description)}`}><MoreHorizontal size={18} /></button></td></tr>)}</tbody></table></div>;
+  return <div className="table-scroll"><table className={`transaction-table${selectable ? ' selectable-table' : ''}${compact ? ' dense-table' : ''}`}><thead><tr>{selectable && <th className="selection-cell"><input type="checkbox" checked={allSelected} onChange={(event) => onSelectVisible?.(event.currentTarget.checked)} aria-label="تحديد كل العمليات الظاهرة" /></th>}<th>النوع</th><th>البيان</th><th>التصنيف</th><th>المرحلة</th><th>التاريخ</th><th>المبلغ</th><th><span className="sr-only">تفاصيل</span></th></tr></thead><tbody>{records.map((record) => <tr key={record.id}>{selectable && <td className="selection-cell"><input type="checkbox" checked={selectedIds.includes(record.id)} onChange={() => onToggleSelection?.(record.id)} aria-label={`تحديد عملية: ${normalizeDigits(record.description)}`} /></td>}<td><span className={`type-badge ${record.type}`}><span />{record.type === 'income' ? 'قبض' : 'صرف'}</span></td><td><div className="transaction-description">{normalizeDigits(record.description)}{record.attachmentId && <span className="attachment-mark" title="توجد فاتورة أو صورة" aria-label="توجد فاتورة أو صورة"><ImagePlus size={13} /></span>}<small>{normalizeDigits(record.person || 'بدون اسم')}</small></div></td><td>{normalizeDigits(categories.get(record.categoryId ?? '') ?? '—')}</td><td>{normalizeDigits(stages.get(record.stageId ?? '') ?? '—')}</td><td><span className="date-cell">{compactDate.format(new Date(`${record.date}T12:00:00`))}</span></td><td><strong className={`table-amount ${record.type}`} dir="ltr"><bdi>{formatAmount(record.amount)}</bdi><small>د.ع</small></strong></td><td><button className="row-open" onClick={(e) => { e.stopPropagation(); onDetails(record); }} aria-label={`عرض تفاصيل: ${normalizeDigits(record.description)}`}><MoreHorizontal size={18} /></button></td></tr>)}</tbody></table></div>;
 }
 
 function EmptyState({ onAdd }: { onAdd: () => void }) { return <div className="dashboard-empty"><div className="empty-icon"><ReceiptText size={24} /></div><b>لا توجد عمليات بعد</b><button className="outline-button" onClick={onAdd}><Plus size={16} />إضافة عملية</button></div>; }
@@ -478,10 +544,10 @@ function ReportBreakdown({ title, options, records, field }: { title: string; op
   return <section className="content-card breakdown-card"><div className="section-header"><div><h2>{title}</h2><p>إجمالي المصروفات المسجلة</p></div><span className="chart-icon"><BarChart3 size={18} /></span></div>{totals.length ? <div className="breakdown-list">{totals.map((row) => <div className="breakdown-row" key={row.id}><div className="breakdown-label"><span>{normalizeDigits(row.name)}</span><strong dir="ltr"><bdi>{formatAmount(row.value)}</bdi><small>د.ع</small></strong></div><div className="bar-track"><span style={{ width: `${Math.max(3, row.value / max * 100)}%` }} /></div></div>)}</div> : <div className="breakdown-empty">لا توجد مصروفات ضمن الفترة المحددة</div>}</section>;
 }
 
-function TransactionDialog({ mode, record, initialType, categories, stages, clients, user, projectId, onClose, onSaved, onDeleted, onEdit }: {
-  mode: 'create' | 'edit' | 'detail'; record?: Transaction; initialType?: TransactionType; categories: NamedOption[]; stages: NamedOption[]; clients: Client[];
+function TransactionDialog({ mode, record, initialType, categories, stages, clients, user, projectId, onClose, onSaved, onToast, onDeleted, onEdit, onDuplicate }: {
+  mode: 'create' | 'edit' | 'detail' | 'duplicate'; record?: Transaction; initialType?: TransactionType; categories: NamedOption[]; stages: NamedOption[]; clients: Client[];
   user: User; projectId: string;
-  onClose: () => void; onSaved: (message: string) => void; onDeleted: () => void; onEdit: () => void;
+  onClose: () => void; onSaved: (message: string) => void; onToast: (message: string) => void; onDeleted: () => void; onEdit: () => void; onDuplicate: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const descriptionRef = useRef<HTMLInputElement>(null);
@@ -490,9 +556,9 @@ function TransactionDialog({ mode, record, initialType, categories, stages, clie
   useEffect(() => {
     let active = true;
     setStoredAttachment(null);
-    if (record?.attachmentId) void getCloudAttachment(record.id).then((attachment) => { if (active) setStoredAttachment(attachment); }).catch((error) => console.error(error));
+    if (record?.attachmentId && mode !== 'duplicate') void getCloudAttachment(record.id).then((attachment) => { if (active) setStoredAttachment(attachment); }).catch((error) => console.error(error));
     return () => { active = false; };
-  }, [record?.id, record?.attachmentId]);
+  }, [record?.id, record?.attachmentId, mode]);
   const [type, setType] = useState<TransactionType>(record?.type ?? initialType ?? 'expense');
   const [amount, setAmount] = useState(record ? formatAmount(record.amount) : '');
   const [description, setDescription] = useState(normalizeDigits(record?.description ?? ''));
@@ -536,16 +602,16 @@ function TransactionDialog({ mode, record, initialType, categories, stages, clie
     setFieldErrors({}); setBusy(true);
     const now = Date.now();
     const next: Transaction = {
-      id: record?.id ?? crypto.randomUUID(), type, amount: parsedAmount, description: normalizeDigits(description.trim()), date: normalizeDigits(date),
+      id: mode === 'edit' && record ? record.id : crypto.randomUUID(), type, amount: parsedAmount, description: normalizeDigits(description.trim()), date: normalizeDigits(date),
       ...(type === 'expense' && categoryId ? { categoryId } : {}), ...(type === 'expense' && stageId ? { stageId } : {}),
       ...(clientId ? { clientId } : {}),
       ...(person.trim() ? { person: normalizeDigits(person.trim()) } : {}), ...(notes.trim() ? { notes: normalizeDigits(notes.trim()) } : {}),
-      createdAt: record?.createdAt ?? now, updatedAt: now
+      createdAt: mode === 'edit' && record ? record.createdAt : now, updatedAt: now
     };
     try {
       if (file && (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.type) || file.size > 10 * 1024 * 1024)) throw new Error('invalid-file');
       await saveCloudTransaction(user, projectId, next, file, removeFile);
-      onSaved(mode === 'edit' ? 'تم تعديل العملية بنجاح' : 'تم حفظ العملية بنجاح');
+      onSaved(mode === 'edit' ? 'تم تعديل العملية بنجاح' : mode === 'duplicate' ? 'تم نسخ العملية وحفظها' : 'تم حفظ العملية بنجاح');
     } catch (cause) {
       console.error(cause);
       setError(cause instanceof Error && cause.message === 'invalid-file' ? 'الملف غير مدعوم أو يتجاوز 10 ميغابايت' : file ? 'تعذر رفع المرفق، حاول مرة أخرى' : 'تعذر حفظ العملية، حاول مرة أخرى');
@@ -561,8 +627,15 @@ function TransactionDialog({ mode, record, initialType, categories, stages, clie
   }
 
   const labels = type === 'income' ? { title: 'إضافة قبض', person: 'المصدر / الشخص', file: 'صورة داعمة' } : { title: 'إضافة صرف', person: 'المورد / الشخص', file: 'فاتورة أو وصل' };
-  const modalTitle = isDetail ? (record?.type === 'income' ? 'تفاصيل القبض' : 'تفاصيل الصرف') : mode === 'edit' ? 'تعديل العملية' : labels.title;
+  const modalTitle = isDetail ? (record?.type === 'income' ? 'تفاصيل القبض' : 'تفاصيل الصرف') : mode === 'edit' ? 'تعديل العملية' : mode === 'duplicate' ? 'نسخ العملية' : labels.title;
   const close = () => { if (!busy) onClose(); };
+  async function copyDetails() {
+    if (!record) return;
+    try {
+      await navigator.clipboard.writeText([record.type === 'income' ? 'قبض' : 'صرف', normalizeDigits(record.description), formatAmount(record.amount), normalizeDigits(record.date), normalizeDigits(record.person ?? '')].filter(Boolean).join(' · '));
+      onToast('تم نسخ تفاصيل العملية');
+    } catch { onToast('تعذر نسخ تفاصيل العملية'); }
+  }
 
   return <dialog ref={dialogRef} className="transaction-dialog" onCancel={(event) => { event.preventDefault(); close(); }} onClick={(event) => { if (event.target === dialogRef.current) close(); }} aria-labelledby="transaction-dialog-title">
     <div className="dialog-head"><div><span className={`dialog-type-icon ${type}`}>{type === 'income' ? <ArrowDownLeft size={18} /> : <ArrowUpLeft size={18} />}</span><div><h2 id="transaction-dialog-title">{modalTitle}</h2><p>{isDetail ? 'معلومات العملية المالية' : 'أدخل تفاصيل العملية'}</p></div></div><button className="icon-button back-button" onClick={close} aria-label="الرجوع وإغلاق النافذة"><ArrowRight size={19} /></button></div>
@@ -570,7 +643,7 @@ function TransactionDialog({ mode, record, initialType, categories, stages, clie
       <div className={`details-amount ${record.type}`}><span>{record.type === 'income' ? 'مبلغ القبض' : 'مبلغ الصرف'}</span><strong dir="ltr"><bdi>{formatAmount(record.amount)}</bdi><small>د.ع</small></strong></div>
       <div className="details-grid"><DetailItem label="البيان" value={normalizeDigits(record.description)} /><DetailItem label="التاريخ" value={formatDate(record.date)} /><DetailItem label="العميل" value={normalizeDigits(clients.find((item) => item.id === record.clientId)?.name ?? '—')} /><DetailItem label="التصنيف" value={normalizeDigits(categories.find((item) => item.id === record.categoryId)?.name ?? '—')} /><DetailItem label="المرحلة" value={normalizeDigits(stages.find((item) => item.id === record.stageId)?.name ?? '—')} /><DetailItem label={record.type === 'income' ? 'المصدر / الشخص' : 'المورد / الشخص'} value={normalizeDigits(record.person || '—')} /><DetailItem label="الملاحظات" value={normalizeDigits(record.notes || '—')} wide /></div>
       {hasAttachment && storedAttachment && <div className="detail-attachment"><span className="field-label">الفاتورة / الصورة</span><a href={storedAttachment.url} target="_blank" rel="noreferrer" className="attachment-preview">{storedAttachment.fileType.startsWith('image/') ? <img src={storedAttachment.url} alt={normalizeDigits(storedAttachment.fileName)} /> : <FileDown size={22} />}<span>{normalizeDigits(storedAttachment.fileName)} <Download size={15} /></span></a></div>}
-      <div className="dialog-actions"><button className="danger-outline" onClick={() => void deleteCurrent()} disabled={busy}><Trash2 size={16} />حذف</button><span className="actions-spacer" /><button className="secondary-button" onClick={onClose}>إغلاق</button><button className="primary-button" onClick={onEdit}><Pencil size={15} />تعديل</button></div>
+      <div className="dialog-actions"><button className="danger-outline" onClick={() => void deleteCurrent()} disabled={busy}><Trash2 size={16} />حذف</button><button className="secondary-button" onClick={() => void copyDetails()}><Copy size={15} />نسخ التفاصيل</button><span className="actions-spacer" /><button className="secondary-button" onClick={onClose}>إغلاق</button><button className="secondary-button" onClick={onDuplicate}><Copy size={15} />نسخ كعملية جديدة</button><button className="primary-button" onClick={onEdit}><Pencil size={15} />تعديل</button></div>
     </div> : <form onSubmit={(event) => void submit(event)} noValidate>
       <div className="dialog-body">
         <fieldset className="type-switch"><legend>نوع العملية</legend><button type="button" className={type === 'expense' ? 'selected expense' : ''} onClick={() => setType('expense')}><ArrowUpLeft size={16} />صرف</button><button type="button" className={type === 'income' ? 'selected income' : ''} onClick={() => setType('income')}><ArrowDownLeft size={16} />قبض</button></fieldset>
