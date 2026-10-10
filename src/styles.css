@@ -689,3 +689,177 @@ button, select { cursor: pointer; }
   .migration-actions { align-items: stretch; flex-direction: column; }
   .migration-actions button { justify-content: center; }
 }
+
+/* iOS-inspired controls, using Beity's existing palette and behavior */
+:root { --radius-control: 14px; }
+.primary-button,
+.secondary-button,
+.outline-button,
+.danger-outline {
+  min-height: 44px;
+  padding-inline: 16px;
+  border-radius: 999px;
+  transition: background-color .15s, border-color .15s, color .15s, transform .15s, box-shadow .15s;
+}
+.primary-button { box-shadow: 0 2px 5px rgba(20, 72, 120, .16); }
+.primary-button:active:not(:disabled),
+.secondary-button:active:not(:disabled),
+.outline-button:active:not(:disabled),
+.danger-outline:active:not(:disabled),
+.text-button:active:not(:disabled),
+.quick-buttons button:active:not(:disabled),
+.upload-button:active:not(:disabled) { transform: scale(.96); }
+.secondary-button { border-color: #dce6ef; }
+.outline-button { min-height: 40px; }
+.danger-outline { border-color: #f0d4d1; }
+.text-button {
+  min-height: 40px;
+  padding-inline: 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  transition: background-color .15s, color .15s, transform .15s;
+}
+.text-button:hover { color: #123e65; background: var(--primary-soft); }
+.quick-buttons button {
+  min-height: 44px;
+  padding-inline: 16px;
+  border-radius: 999px;
+  transition: background-color .15s, border-color .15s, transform .15s;
+}
+.row-open,
+.icon-button,
+.mobile-menu { width: 40px; height: 40px; border-radius: 999px; }
+.icon-button:hover,
+.row-open:hover { color: #315978; background: var(--primary-soft); }
+.select-wrap {
+  min-height: 44px;
+  height: 44px;
+  padding-inline: 12px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  color: #718398;
+  background: var(--muted-soft);
+  transition: background-color .15s, border-color .15s, box-shadow .15s;
+}
+.select-wrap:focus-within { border-color: #9dbbd2; box-shadow: 0 0 0 3px rgba(42,116,183,.12); }
+.select-wrap select,
+.plain-select,
+.form-field > select,
+.font-select,
+.dashboard-size-field select,
+.statement-filter select,
+.report-filter select {
+  min-height: 44px;
+  padding: 0 14px 0 38px;
+  border: 1px solid #e5ecf2;
+  border-radius: 14px;
+  color: #304a62;
+  background-color: #f7f9fb;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23718797' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 13px center;
+  appearance: none;
+  transition: background-color .15s, border-color .15s, box-shadow .15s;
+}
+.select-wrap select {
+  min-height: 40px;
+  padding: 0 3px 0 26px;
+  border: 0;
+  background-color: transparent;
+  background-position: left 1px center;
+}
+.select-wrap select:focus-visible { outline: none; }
+.select-wrap:focus-within select:focus-visible { outline: none; }
+.plain-select:hover,
+.form-field > select:hover,
+.font-select:hover,
+.dashboard-size-field select:hover,
+.statement-filter select:hover,
+.report-filter select:hover { background-color: #f0f5f9; border-color: #d7e3ed; }
+.plain-select:focus-visible,
+.form-field > select:focus-visible,
+.font-select:focus-visible,
+.dashboard-size-field select:focus-visible,
+.statement-filter select:focus-visible,
+.report-filter select:focus-visible {
+  outline: 3px solid rgba(42,116,183,.3);
+  outline-offset: 2px;
+  border-color: #7fa6c4;
+  background-color: #fff;
+}
+.search-field {
+  min-height: 44px;
+  height: 44px;
+  padding-inline: 13px;
+  border-color: transparent;
+  border-radius: 14px;
+  background: #f7f9fb;
+  transition: background-color .15s, border-color .15s, box-shadow .15s;
+}
+.search-field:focus-within { border-color: #9dbbd2; background: #fff; box-shadow: 0 0 0 3px rgba(42,116,183,.12); }
+.search-field input { font-size: 14px; }
+.date-filter-row input,
+.report-filter input[type="date"] {
+  min-height: 44px;
+  height: 44px;
+  padding-inline: 11px;
+  border-color: #e5ecf2;
+  border-radius: 14px;
+  background: #f7f9fb;
+  font-size: 12px;
+}
+.report-filter,
+.statement-filter { gap: 14px; }
+.form-field > input:not([type="file"]),
+.form-field > textarea,
+.client-add-form input,
+.option-add input,
+.font-select,
+.system-name-form input,
+.amount-field {
+  border-color: #e5ecf2;
+  border-radius: 14px;
+  background-color: #f7f9fb;
+  transition: background-color .15s, border-color .15s, box-shadow .15s;
+}
+.form-field > input:not([type="file"]):focus-visible,
+.form-field > textarea:focus-visible,
+.client-add-form input:focus-visible,
+.option-add input:focus-visible,
+.system-name-form input:focus-visible {
+  outline: 3px solid rgba(42,116,183,.3);
+  outline-offset: 2px;
+  border-color: #7fa6c4;
+  background: #fff;
+}
+.form-field > input:not([type="file"]):not([type="date"]):hover,
+.form-field > textarea:hover,
+.client-add-form input:hover,
+.option-add input:hover,
+.system-name-form input:hover { background-color: #f0f5f9; }
+.amount-field { min-height: 46px; }
+.amount-field:focus-within { border-color: #7fa6c4; background: #fff; box-shadow: 0 0 0 3px rgba(42,116,183,.12); }
+.type-switch button {
+  min-height: 42px;
+  border-color: #e1e8ef;
+  border-radius: 999px;
+  transition: background-color .15s, border-color .15s, color .15s, transform .15s;
+}
+.type-switch button:active { transform: scale(.96); }
+.type-switch button.selected.expense { border-color: #e9c8c3; box-shadow: 0 1px 3px rgba(166,78,69,.1); }
+.type-switch button.selected.income { border-color: #c9e4d4; box-shadow: 0 1px 3px rgba(24,113,74,.1); }
+.upload-button { min-height: 42px; border-radius: 999px; }
+.bottom-nav button { border-radius: 999px; transition: background-color .15s, color .15s, transform .15s; }
+.bottom-nav button.active { background: #edf4f9; }
+.bottom-nav button:active { transform: scale(.96); }
+.export-options button { border-radius: 12px; }
+.export-options button:active { transform: scale(.98); }
+@media (max-width: 520px) {
+  .top-add { min-height: 40px; }
+  .form-field > input:not([type="file"]),
+  .form-field > select,
+  .form-field > textarea { font-size: 16px; }
+  .select-wrap select { font-size: 16px; }
+  .migration-actions .primary-button,
+  .migration-actions .secondary-button { min-height: 44px; }
+}
