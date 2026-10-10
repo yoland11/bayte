@@ -457,7 +457,8 @@ button, select { cursor: pointer; }
 }
 
 /* Uiverse MIT adaptations: JkHuger (theme switch), Praashoo7 (search field),
-   AKAspidey01 (back action), _1380 (radio/glider navigation), cssbuttons-io (action buttons). */
+   AKAspidey01 (back action), _1380 (radio/glider navigation), cssbuttons-io (action buttons),
+   barisdogansutcu (loading spinner). */
 
 /* JkHuger theme switch, adapted to Beity colors and a compact toolbar control. */
 .theme-switch { position: relative; display: inline-flex; flex: 0 0 auto; align-items: center; cursor: pointer; -webkit-tap-highlight-color: transparent; }
@@ -478,6 +479,14 @@ button, select { cursor: pointer; }
 .primary-button:not(:disabled) { background: linear-gradient(135deg, #2b6da8, #174b79 52%, #123a62); box-shadow: 0 6px 16px rgba(20,72,120,.2), inset 0 1px 0 rgba(255,255,255,.2); }
 .primary-button:hover:not(:disabled) { background: linear-gradient(135deg, #357db8, #1c5688 52%, #164873); box-shadow: 0 8px 19px rgba(20,72,120,.25), inset 0 1px 0 rgba(255,255,255,.22); }
 .primary-button:active:not(:disabled) { transform: scale(.96); }
+.uiverse-spinner { width: 17px; height: 17px; flex: 0 0 auto; transform-origin: center; animation: uiverse-rotate 1.3s linear infinite; }
+.uiverse-spinner circle { fill: none; stroke: currentColor; stroke-width: 2.5; stroke-dasharray: 1, 56; stroke-dashoffset: 0; stroke-linecap: round; animation: uiverse-dash 1.35s ease-in-out infinite; }
+@keyframes uiverse-rotate { to { transform: rotate(360deg); } }
+@keyframes uiverse-dash {
+  0% { stroke-dasharray: 1, 56; stroke-dashoffset: 0; }
+  50% { stroke-dasharray: 25, 56; stroke-dashoffset: -8; }
+  100% { stroke-dasharray: 25, 56; stroke-dashoffset: -44; }
+}
 
 /* AKAspidey01 back action: the arrow's accent expands across the pill on hover. */
 .dialog-head .back-button { position: relative; isolation: isolate; overflow: hidden; flex: 0 0 40px; color: #214c70; background: #f2f6fa; transition: color .25s ease, transform .2s ease; }
@@ -608,7 +617,7 @@ button, select { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   .theme-switch-track, .theme-switch-thumb, .theme-switch-thumb::before,
   .dialog-head .back-button, .dialog-head .back-button::before,
-  .bottom-nav::before, .page-content { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+  .bottom-nav::before, .page-content, .uiverse-spinner, .uiverse-spinner circle { transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
 @media (max-width: 360px) {
   .summary-grid { grid-template-columns: 1fr; }
