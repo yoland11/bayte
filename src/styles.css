@@ -921,6 +921,119 @@ button, select { cursor: pointer; }
   .migration-actions button { justify-content: center; }
 }
 
+/* A denser filter rhythm and legible ledger cards on narrow screens. */
+@media (max-width: 760px) {
+  .transactions-card .toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 13px 12px 10px;
+  }
+  .transactions-card .search-field { width: 100%; }
+  .transactions-card .toolbar-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .transactions-card .toolbar-filters > * { width: 100%; min-width: 0; }
+  .transactions-card .toolbar-filters .select-wrap { justify-content: space-between; }
+  .transactions-card .toolbar-filters .select-wrap select { width: 100%; min-width: 0; }
+  .transactions-card .toolbar-filters .plain-select { min-width: 0; }
+  .transactions-card .date-filter-row {
+    gap: 8px;
+    padding: 0 12px 12px;
+  }
+  .transactions-card .date-filter-row > span:first-child { align-self: center; }
+  .transactions-card .date-filter-row > .plain-select { flex: 1 1 145px; min-width: 0; }
+  .transactions-card .date-filter-row > label { flex: 1 1 125px; }
+  .transactions-card .date-filter-row > label input { min-width: 0; width: 100%; }
+  .transactions-card .date-filter-row .result-count { flex: 1 1 auto; margin-inline-start: 0; }
+  .transactions-card .date-filter-row .export-small { flex: 0 0 auto; }
+  .transactions-card .date-filter-row .selection-count { flex: 1 1 100%; }
+  .transactions-card .table-scroll { overflow: visible; padding: 0 10px 10px; }
+  .transactions-card .transaction-table:not(.trash-table) {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    border-collapse: separate;
+    border-spacing: 0 8px;
+  }
+  .transactions-card .transaction-table:not(.trash-table) thead { display: none; }
+  .transactions-card .transaction-table:not(.trash-table) tbody { display: grid; gap: 8px; }
+  .transactions-card .transaction-table:not(.trash-table) .transaction-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "amount type"
+      "description description"
+      "date date"
+      "category stage"
+      "actions actions";
+    gap: 9px 12px;
+    padding: 13px;
+    border: 1px solid var(--surface-border);
+    border-radius: 16px;
+    background: var(--card);
+    box-shadow: 0 2px 8px rgba(29, 55, 78, .045);
+    animation: ledger-row-in .18s ease-out both;
+  }
+  .transactions-card .transaction-table:not(.trash-table) .transaction-row td {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    line-height: 1.45;
+    font-size: 11px;
+  }
+  .transactions-card .transaction-type-cell { grid-area: type; justify-content: flex-end; }
+  .transactions-card .transaction-amount-cell { grid-area: amount; justify-content: flex-start; }
+  .transactions-card .transaction-amount-cell .table-amount { justify-content: flex-start; font-size: 14px; }
+  .transactions-card .transaction-description-cell { grid-area: description; padding-block: 3px !important; }
+  .transactions-card .transaction-description { width: 100%; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+  .transactions-card .transaction-description small { margin-top: 3px; }
+  .transactions-card .transaction-date-cell { grid-area: date; justify-content: flex-start; }
+  .transactions-card .transaction-category-cell { grid-area: category; }
+  .transactions-card .transaction-stage-cell { grid-area: stage; }
+  .transactions-card .transaction-date-cell::before,
+  .transactions-card .transaction-category-cell::before,
+  .transactions-card .transaction-stage-cell::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    margin-inline-end: 6px;
+    color: var(--muted);
+    font-size: 10px;
+  }
+  .transactions-card .transaction-actions-cell { grid-area: actions; justify-content: flex-end; border-top: 1px solid var(--surface-border) !important; padding-top: 4px !important; }
+  .transactions-card .transaction-actions-cell .row-open { width: 36px; height: 36px; }
+  .transactions-card .selectable-table .transaction-row {
+    grid-template-areas:
+      "selection selection"
+      "amount type"
+      "description description"
+      "date date"
+      "category stage"
+      "actions actions";
+  }
+  .transactions-card .selectable-table .transaction-row .selection-cell {
+    grid-area: selection;
+    justify-content: flex-start;
+    width: auto;
+    min-height: 27px;
+    padding-bottom: 6px !important;
+    border-bottom: 1px solid var(--surface-border) !important;
+  }
+  .transactions-card .selectable-table .selection-cell input { width: 20px; height: 20px; }
+}
+@keyframes ledger-row-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .transactions-card .transaction-row { animation: none !important; }
+}
+
 /* iOS-inspired controls, using Beity's existing palette and behavior */
 :root { --radius-control: 14px; }
 .primary-button,
