@@ -141,7 +141,15 @@ function App() {
     if (nextUser) savePinUnlock(nextUser.id, window.sessionStorage);
     setPinUnlocked(true);
   };
-  if (!pinUnlocked) return <PinGate onUnlock={unlock} />;
+  const signInToSyncAccount = async (email: string, password: string) => {
+    const { data, error } = await requireSupabase().auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    if (!data.user) throw new Error('تعذر فتح حساب المزامنة');
+    activeUserId.current = data.user.id;
+    setUser(data.user);
+    setPinUnlocked(true);
+  };
+  if (!pinUnlocked) return <PinGate onUnlock={unlock} onSignIn={signInToSyncAccount} />;
   return <TrackerApp user={user!} onLock={() => { clearPinUnlock(window.sessionStorage); setPinUnlocked(false); }} />;
 }
 
@@ -491,9 +499,12 @@ function GateShell({ children }: { children: React.ReactNode }) {
   return <main className="auth-shell" dir="rtl"><section className="auth-card"><div className="auth-brand"><span className="brand-mark"><HardHat size={23} /></span><span><b>بيتي</b><small>متابعة بناء البيت</small></span></div>{children}</section></main>;
 }
 
-function PinGate({ onUnlock }: { onUnlock: () => Promise<void> }) {
+function PinGate({ onUnlock, onSignIn }: { onUnlock: () => Promise<void>; onSignIn: (email: string, password: string) => Promise<void> }) {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
+  const [accountError, setAccountError] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -508,7 +519,14 @@ function PinGate({ onUnlock }: { onUnlock: () => Promise<void> }) {
       setPin('');
     } finally { setBusy(false); }
   }
-  return <GateShell><h1>أدخل رمز PIN</h1><p>أدخل الرمز لفتح نظام بيتي على هذا الجهاز.</p><form className="auth-form" onSubmit={(event) => void submit(event)}><label>رمز PIN<input autoFocus type="password" inputMode="numeric" autoComplete="current-password" pattern="[0-9٠-٩۰-۹]{4}" maxLength={4} dir="ltr" value={pin} onChange={(event) => { setPin(normalizeDigits(event.target.value).replace(/\D/g, '').slice(0, 4)); setError(''); }} aria-invalid={!!error} required /></label>{error && <p className="error-banner" role="alert">{error}</p>}<button className="primary-button" type="submit" disabled={pin.length !== 4 || busy}>{busy ? <><InlineSpinner />جارٍ فتح النظام…</> : 'فتح النظام'}</button></form></GateShell>;
+  async function submitSyncAccount() {
+    if (!verifyAppPin(pin)) { setError('أدخل PIN الصحيح أولاً'); setPin(''); return; }
+    setBusy(true); setAccountError('');
+    try { await onSignIn(email.trim(), password); }
+    catch { setAccountError('تعذر ربط الجهاز. تأكد من البريد وكلمة المرور، وأنك أكدت البريد من الجهاز الذي ربطت عليه الحساب.'); }
+    finally { setBusy(false); }
+  }
+  return <GateShell><h1>أدخل رمز PIN</h1><p>أدخل الرمز لفتح نظام بيتي على هذا الجهاز.</p><form className="auth-form" onSubmit={(event) => void submit(event)}><label>رمز PIN<input autoFocus type="password" inputMode="numeric" autoComplete="current-password" pattern="[0-9٠-٩۰-۹]{4}" maxLength={4} dir="ltr" value={pin} onChange={(event) => { setPin(normalizeDigits(event.target.value).replace(/\D/g, '').slice(0, 4)); setError(''); }} aria-invalid={!!error} required /></label>{error && <p className="error-banner" role="alert">{error}</p>}<button className="primary-button" type="submit" disabled={pin.length !== 4 || busy}>{busy ? <><InlineSpinner />جارٍ فتح النظام…</> : 'فتح النظام'}</button></form><details className="sync-login"><summary>ربط هذا الجهاز بالحساب المشترك</summary><p>أدخل بيانات المزامنة مرة واحدة؛ سيبقى PIN هو قفل الدخول اليومي.</p><label>البريد الإلكتروني<input type="email" autoComplete="username" dir="ltr" value={email} onChange={(event) => { setEmail(event.target.value); setAccountError(''); }} /></label><label>كلمة مرور المزامنة<input type="password" autoComplete="current-password" dir="ltr" value={password} onChange={(event) => { setPassword(event.target.value); setAccountError(''); }} /></label>{accountError && <p className="error-banner" role="alert">{accountError}</p>}<button className="secondary-button" type="button" onClick={() => void submitSyncAccount()} disabled={!email.trim() || !password || pin.length !== 4 || busy}>{busy ? <><InlineSpinner />جارٍ الربط…</> : 'ربط الجهاز'}</button></details></GateShell>;
 }
 
 async function downloadLocalBackup() {
@@ -693,6 +711,37 @@ function MoreToolsPage({ trashedCount, onNavigate }: { trashedCount: number; onN
   return <section className="page-content more-tools-page"><div className="page-heading"><div><p className="eyebrow">أدوات النظام</p><h1>المزيد</h1><p className="page-subtitle">الأقسام التي تحتاجها عند المراجعة أو إدارة النظام.</p></div></div><div className="more-tools-grid">{tools.map(({ id, title, description, icon: Icon, count }) => <button className="more-tool-card" key={id} onClick={() => onNavigate(id)}><span className="more-tool-icon"><Icon size={20} /></span><span className="more-tool-copy"><b>{title}</b><small>{description}</small></span>{count !== undefined && <span className="more-tool-count">{formatAmount(count)}</span>}<ArrowRight className="more-tool-arrow" size={17} /></button>)}</div></section>;
 }
 
+function SyncAccountSettings({ user }: { user: User }) {
+  const [email, setEmail] = useState(user.email ?? '');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  useEffect(() => { if (user.email) setEmail(user.email); }, [user.email]);
+  async function sendVerification() {
+    if (!email.trim()) return;
+    setBusy(true); setMessage('');
+    try {
+      const { error } = await requireSupabase().auth.updateUser({ email: email.trim() }, { emailRedirectTo: window.location.origin });
+      if (error) throw error;
+      setMessage('تم إرسال رسالة تأكيد. افتحها على هذا الجهاز، ثم أعد فتح بيتي لإضافة كلمة مرور المزامنة.');
+    } catch {
+      setMessage('تعذر ربط البريد. تحقق من تفعيل ربط الهوية اليدوي في إعدادات Authentication، ثم أعد المحاولة.');
+    } finally { setBusy(false); }
+  }
+  async function savePassword() {
+    if (password.length < 8) { setMessage('اجعل كلمة المرور 8 أحرف أو أكثر.'); return; }
+    setBusy(true); setMessage('');
+    try {
+      const { error } = await requireSupabase().auth.updateUser({ password });
+      if (error) throw error;
+      setPassword(''); setMessage('تم إعداد حساب المزامنة. استخدم البريد وكلمة المرور مرة واحدة على الكمبيوتر، ثم افتح النظام بـ PIN.');
+    } catch {
+      setMessage('تعذر حفظ كلمة المرور. تأكد من تأكيد البريد أولاً ثم أعد المحاولة.');
+    } finally { setBusy(false); }
+  }
+  return <section className="sync-account-card"><div className="sync-account-heading"><div><h2>مزامنة الهاتف والكمبيوتر</h2><p>اربط جلسة هذا الجهاز بالبريد نفسه حتى تظهر العمليات على أجهزتك.</p></div><span className="sync-status-dot" /></div>{user.is_anonymous ? <><label className="sync-account-field">البريد الإلكتروني<input type="email" autoComplete="email" dir="ltr" value={email} onChange={(event) => { setEmail(event.target.value); setMessage(''); }} placeholder="name@example.com" /></label><button className="secondary-button" onClick={() => void sendVerification()} disabled={!email.trim() || busy}>{busy ? <><InlineSpinner />جارٍ الإرسال…</> : 'إرسال رابط التأكيد'}</button><p className="sync-account-note">يُربط البريد بحساب الهاتف الحالي؛ تبقى عملياته وبياناته كما هي. بعد التأكيد أعد فتح بيتي لإضافة كلمة مرور.</p></> : <><p className="sync-account-email">الحساب الموحد: <bdi dir="ltr">{user.email ?? '—'}</bdi></p>{user.email && user.email_confirmed_at ? <><label className="sync-account-field">كلمة مرور المزامنة<input type="password" autoComplete="new-password" minLength={8} dir="ltr" value={password} onChange={(event) => { setPassword(event.target.value); setMessage(''); }} placeholder="8 أحرف أو أكثر" /></label><button className="secondary-button" onClick={() => void savePassword()} disabled={password.length < 8 || busy}>{busy ? <><InlineSpinner />جارٍ الحفظ…</> : 'حفظ كلمة المرور'}</button><p className="sync-account-note">على الكمبيوتر اختر «ربط هذا الجهاز بالحساب المشترك»، أدخل البريد وكلمة المرور وPIN. تُحفظ الجلسة بعدها ويكفي PIN عند الدخول اليومي.</p></> : <p className="sync-account-note">أكد البريد من الرسالة التي وصلتك، ثم أعد فتح النظام لإعداد كلمة المرور.</p>}</>}{message && <p className="sync-account-message" role="status">{message}</p>}</section>;
+}
+
 function SettingsPage({ categories, stages, transactions, projectName, logoUrl, dashboardOrder, dashboardSize, onToast, fontPreferences, onFontPreferenceChange, user, projectId, onRefresh, onProjectName, onLogo, onDashboardOrder, onDashboardSize, onLock }: { categories: NamedOption[]; stages: NamedOption[]; transactions: Transaction[]; projectName: string; logoUrl: string | null; dashboardOrder: DashboardCard[]; dashboardSize: 'compact' | 'normal' | 'large'; onToast: (message: string) => void; fontPreferences: FontPreferences; onFontPreferenceChange: (role: keyof FontPreferences, font: FontStyleId) => void; user: User; projectId: string; onRefresh: () => Promise<void>; onProjectName: (name: string) => void; onLogo: (url: string | null) => void; onDashboardOrder: (order: DashboardCard[]) => void; onDashboardSize: (size: 'compact' | 'normal' | 'large') => void; onLock: () => void }) {
   const [newCategory, setNewCategory] = useState('');
   const [newStage, setNewStage] = useState('');
@@ -749,6 +798,7 @@ function SettingsPage({ categories, stages, transactions, projectName, logoUrl, 
     } finally { setMigrationBusy(false); if (backupFileRef.current) backupFileRef.current.value = ''; }
   }
   return <section className="page-content settings-page"><div className="page-heading"><div><p className="eyebrow">تهيئة التطبيق</p><h1>الإعدادات</h1><p className="page-subtitle">اسم النظام وشعاره وتصنيفاته ومراحله والنسخ الاحتياطي.</p></div><button className="secondary-button" onClick={onLock}>قفل النظام</button></div>
+    <SyncAccountSettings user={user} />
     <details className="settings-accordion" open><summary><span>لوحة التحكم والمظهر</span><small>اسم النظام والشعار وترتيب بطاقات الرئيسية</small><ChevronDown size={16} /></summary><SystemSettingsPanel projectId={projectId} user={user} projectName={projectName} logoUrl={logoUrl} dashboardOrder={dashboardOrder} dashboardSize={dashboardSize} onToast={onToast} onRefresh={onRefresh} onProjectName={onProjectName} onLogo={onLogo} onDashboardOrder={onDashboardOrder} onDashboardSize={onDashboardSize} /></details>
     <details className="settings-accordion"><summary><span>التصنيفات ومراحل البناء</span><small>{formatAmount(categories.length)} تصنيف · {formatAmount(stages.length)} مراحل</small><ChevronDown size={16} /></summary><div className="settings-grid"><SettingsGroup title="التصنيفات" description="تصنيفات المصاريف المستخدمة" icon={<ReceiptText size={18} />} items={categories} kind="category" newValue={newCategory} onValue={setNewCategory} onAdd={() => void addOption('category')} onRename={renameOption} onDelete={deleteOption} /><SettingsGroup title="مراحل البناء" description="مراحل تنفيذ البيت" icon={<HardHat size={18} />} items={stages} kind="stage" newValue={newStage} onValue={setNewStage} onAdd={() => void addOption('stage')} onRename={renameOption} onDelete={deleteOption} /></div></details>
     <details className="settings-accordion"><summary><span>الخطوط</span><small>تخصيص النصوص الرئيسية والثانوية</small><ChevronDown size={16} /></summary><section className="font-settings-section" aria-labelledby="font-settings-title"><div className="section-header"><div><h2 id="font-settings-title">التحكم بالخطوط</h2><p>اختر خطاً مستقلاً للعناوين وللنصوص المساندة</p></div><span className="font-section-icon" aria-hidden="true">Aa</span></div><div className="font-settings-grid"><FontPicker role="primary" title="النصوص الرئيسية" description="العناوين والأسماء البارزة" value={fontPreferences.primary} onChange={(font) => onFontPreferenceChange('primary', font)} /><FontPicker role="secondary" title="النصوص الثانوية" description="النصوص والوصف والقوائم" value={fontPreferences.secondary} onChange={(font) => onFontPreferenceChange('secondary', font)} /></div><p className="font-note">تعرض المعاينة نماذج رقمية قريبة من أسماء الخطوط التقليدية، وقد يختلف رسم بعض الخطوط عن النسخ الخطية الأصلية.</p></section></details>
