@@ -325,6 +325,14 @@ button, select { cursor: pointer; }
 .type-switch button.selected.expense { color: #a64e45; border-color: #e9c8c3; background: #fcf4f2; }
 .type-switch button.selected.income { color: #18714a; border-color: #c9e4d4; background: #eef8f1; }
 .form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 15px 14px; }
+.optional-transaction-fields { min-width: 0; border: 1px solid #e1e8ef; border-radius: 12px; background: #f8fafc; }
+.optional-transaction-fields > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 46px; padding: 0 13px; color: #405a72; font-size: 12px; font-weight: 500; cursor: pointer; list-style: none; }
+.optional-transaction-fields > summary::-webkit-details-marker { display: none; }
+.optional-transaction-fields > summary small { margin-inline-start: 5px; color: #8998a6; font-size: 10px; font-weight: 400; }
+.optional-transaction-fields > summary svg { flex: 0 0 auto; transition: transform .15s ease-out; }
+.optional-transaction-fields[open] > summary { border-bottom: 1px solid #e1e8ef; }
+.optional-transaction-fields[open] > summary svg { transform: rotate(180deg); }
+.optional-fields-grid { padding: 14px; }
 .form-field { display: grid; align-content: start; gap: 7px; min-width: 0; }
 .form-field > label, .field-label { color: #4e6276; font-size: 11px; font-weight: 500; }
 .form-wide { grid-column: 1 / -1; }
@@ -642,6 +650,10 @@ button, select { cursor: pointer; }
 .app-shell[data-theme="dark"] .type-switch button { border-color: #35495a; color: #b5c3cf; background: #202f3c; }
 .app-shell[data-theme="dark"] .type-switch button.selected.expense { border-color: #80524d; color: #f0a39b; background: #3d2d2d; }
 .app-shell[data-theme="dark"] .type-switch button.selected.income { border-color: #47765c; color: #8bd5ad; background: #24392f; }
+.app-shell[data-theme="dark"] .optional-transaction-fields { border-color: #35495a; background: #202f3c; }
+.app-shell[data-theme="dark"] .optional-transaction-fields > summary { color: #c7d4de; }
+.app-shell[data-theme="dark"] .optional-transaction-fields > summary small { color: #93a4b3; }
+.app-shell[data-theme="dark"] .optional-transaction-fields[open] > summary { border-color: #35495a; }
 .app-shell[data-theme="dark"] .quick-actions small,
 .app-shell[data-theme="dark"] .table-empty,
 .app-shell[data-theme="dark"] .dashboard-empty { color: #91a1b0; }
