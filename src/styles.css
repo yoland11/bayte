@@ -1521,6 +1521,10 @@ button, select { cursor: pointer; }
   .system-name-form input,
   .sync-account-field input,
   .sync-login > label input { min-height: 44px; font-size: 16px; }
+  .settings-page .system-name-form input { height: 44px; min-height: 44px; }
+  .sync-account-card > .secondary-button,
+  .settings-inline-actions .secondary-button,
+  .settings-inline-actions .danger-outline { min-height: 44px; }
   .settings-accordion > summary { min-height: 64px; }
   .dashboard-controls li,
   .client-list li,
