@@ -1357,6 +1357,7 @@ button, select { cursor: pointer; }
   .page-heading > div { min-width: 0; }
   .page-heading h1 { overflow-wrap: anywhere; }
   .page-subtitle { max-width: none; }
+  .transaction-print-region .page-heading > .primary-button { display: none; }
   .app-footer { padding: 0 14px 18px; }
 
   .summary-grid,
@@ -1492,7 +1493,14 @@ button, select { cursor: pointer; }
   .text-button,
   .client-list button,
   .option-list button { min-height: 44px; }
-  .search-clear { flex-basis: 36px; width: 36px; height: 36px; }
+  .icon-button,
+  .row-open { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+  .dashboard-controls .icon-button,
+  .option-list .icon-button { width: 44px; height: 44px; }
+  .search-clear { flex-basis: 44px; width: 44px; height: 44px; }
+  .amount-filter-details summary,
+  .density-toggle { min-height: 44px; }
+  .theme-switch { min-height: 44px; padding-block: 7px; }
   .statement-filter,
   .report-filter { width: 100%; }
   .statement-filter label,
