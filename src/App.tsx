@@ -149,7 +149,7 @@ function App() {
     setUser(data.user);
     setPinUnlocked(true);
   };
-  if (!pinUnlocked) return <PinGate onUnlock={unlock} onSignIn={signInToSyncAccount} />;
+  if (!pinUnlocked) return <PinGate onUnlock={unlock} onSignIn={signInToSyncAccount} defaultAccountOpen={!user || !!user.is_anonymous} />;
   return <TrackerApp user={user!} onLock={() => { clearPinUnlock(window.sessionStorage); setPinUnlocked(false); }} />;
 }
 
@@ -499,7 +499,7 @@ function GateShell({ children }: { children: React.ReactNode }) {
   return <main className="auth-shell" dir="rtl"><section className="auth-card"><div className="auth-brand"><span className="brand-mark"><HardHat size={23} /></span><span><b>بيتي</b><small>متابعة بناء البيت</small></span></div>{children}</section></main>;
 }
 
-function PinGate({ onUnlock, onSignIn }: { onUnlock: () => Promise<void>; onSignIn: (email: string, password: string) => Promise<void> }) {
+function PinGate({ onUnlock, onSignIn, defaultAccountOpen }: { onUnlock: () => Promise<void>; onSignIn: (email: string, password: string) => Promise<void>; defaultAccountOpen: boolean }) {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [accountError, setAccountError] = useState('');
@@ -526,7 +526,7 @@ function PinGate({ onUnlock, onSignIn }: { onUnlock: () => Promise<void>; onSign
     catch { setAccountError('تعذر ربط الجهاز. تأكد من البريد وكلمة المرور، وأنك أكدت البريد من الجهاز الذي ربطت عليه الحساب.'); }
     finally { setBusy(false); }
   }
-  return <GateShell><h1>أدخل رمز PIN</h1><p>أدخل الرمز لفتح نظام بيتي على هذا الجهاز.</p><form className="auth-form" onSubmit={(event) => void submit(event)}><label>رمز PIN<input autoFocus type="password" inputMode="numeric" autoComplete="current-password" pattern="[0-9٠-٩۰-۹]{4}" maxLength={4} dir="ltr" value={pin} onChange={(event) => { setPin(normalizeDigits(event.target.value).replace(/\D/g, '').slice(0, 4)); setError(''); }} aria-invalid={!!error} required /></label>{error && <p className="error-banner" role="alert">{error}</p>}<button className="primary-button" type="submit" disabled={pin.length !== 4 || busy}>{busy ? <><InlineSpinner />جارٍ فتح النظام…</> : 'فتح النظام'}</button></form><details className="sync-login"><summary>ربط هذا الجهاز بالحساب المشترك</summary><p>أدخل بيانات المزامنة مرة واحدة؛ سيبقى PIN هو قفل الدخول اليومي.</p><label>البريد الإلكتروني<input type="email" autoComplete="username" dir="ltr" value={email} onChange={(event) => { setEmail(event.target.value); setAccountError(''); }} /></label><label>كلمة مرور المزامنة<input type="password" autoComplete="current-password" dir="ltr" value={password} onChange={(event) => { setPassword(event.target.value); setAccountError(''); }} /></label>{accountError && <p className="error-banner" role="alert">{accountError}</p>}<button className="secondary-button" type="button" onClick={() => void submitSyncAccount()} disabled={!email.trim() || !password || pin.length !== 4 || busy}>{busy ? <><InlineSpinner />جارٍ الربط…</> : 'ربط الجهاز'}</button></details></GateShell>;
+  return <GateShell><h1>أدخل رمز PIN</h1><p>أدخل الرمز لفتح نظام بيتي على هذا الجهاز.</p><form className="auth-form" onSubmit={(event) => void submit(event)}><label>رمز PIN<input autoFocus type="password" inputMode="numeric" autoComplete="current-password" pattern="[0-9٠-٩۰-۹]{4}" maxLength={4} dir="ltr" value={pin} onChange={(event) => { setPin(normalizeDigits(event.target.value).replace(/\D/g, '').slice(0, 4)); setError(''); }} aria-invalid={!!error} required /></label>{error && <p className="error-banner" role="alert">{error}</p>}<button className="primary-button" type="submit" disabled={pin.length !== 4 || busy}>{busy ? <><InlineSpinner />جارٍ فتح النظام…</> : 'فتح النظام'}</button></form><details className="sync-login" open={defaultAccountOpen}><summary>حساب المزامنة المشترك</summary><p>على الهاتف اربط البريد بحساب بياناتك أولاً. على الجهاز الجديد أدخل البريد وكلمة المرور نفسيهما، ثم يبقى PIN للدخول اليومي.</p><label>البريد الإلكتروني<input type="email" autoComplete="username" dir="ltr" value={email} onChange={(event) => { setEmail(event.target.value); setAccountError(''); }} /></label><label>كلمة مرور المزامنة<input type="password" autoComplete="current-password" dir="ltr" value={password} onChange={(event) => { setPassword(event.target.value); setAccountError(''); }} /></label>{accountError && <p className="error-banner" role="alert">{accountError}</p>}<button className="secondary-button" type="button" onClick={() => void submitSyncAccount()} disabled={!email.trim() || !password || pin.length !== 4 || busy}>{busy ? <><InlineSpinner />جارٍ الربط…</> : 'استخدام الحساب المشترك'}</button></details></GateShell>;
 }
 
 async function downloadLocalBackup() {
