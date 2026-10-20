@@ -193,34 +193,10 @@ button, select { cursor: pointer; }
 .settings-accordion > .content-card, .settings-accordion > .font-settings-section { margin: 14px; }
 .settings-accordion > .settings-grid { padding: 14px; }
 .settings-backup-content { padding: 14px; }
-.sync-account-card { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px 16px; align-items: end; margin-block: 12px; padding: 18px; border: 1px solid #dfe8ef; border-radius: 13px; background: #fff; }
-.sync-account-heading { grid-column: 1 / -1; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.sync-account-heading h2 { margin: 0; color: #29445d; font-size: 13px; font-weight: 600; }
-.sync-account-heading p, .sync-account-note { margin: 5px 0 0; color: #7e8d9b; font-size: 10px; line-height: 1.7; }
-.sync-status-dot { width: 8px; height: 8px; margin-block-start: 5px; border-radius: 50%; background: #73a68b; box-shadow: 0 0 0 4px #eef6f0; }
-.sync-account-field { display: grid; gap: 6px; color: #50667a; font-size: 10px; }
-.sync-account-field input { min-height: 38px; padding: 0 10px; border: 1px solid #dfe6ed; border-radius: 9px; color: #334b62; background: #fff; font-size: 12px; }
-.sync-account-card > .secondary-button { min-height: 38px; white-space: nowrap; }
-.sync-account-note, .sync-account-message, .sync-account-email { grid-column: 1 / -1; }
-.sync-account-email { margin: 0; color: #50667a; font-size: 11px; }
-.sync-account-message { margin: 0; color: #335d7a; font-size: 10px; line-height: 1.7; }
-.sync-login { display: grid; gap: 10px; padding-block-start: 12px; border-top: 1px solid #edf1f5; }
-.sync-login > summary { color: #496883; cursor: pointer; font-size: 11px; text-align: center; }
-.sync-login > p { margin: 0; color: #8190a0; font-size: 10px; line-height: 1.7; }
-.sync-login > label { display: grid; gap: 5px; color: #50667a; font-size: 10px; }
-.sync-login > label input { min-height: 38px; padding: 0 10px; border: 1px solid #dfe6ed; border-radius: 9px; color: #334b62; background: #fff; font-size: 12px; }
-.sync-login > .secondary-button { width: 100%; justify-content: center; }
 .app-shell[data-theme="dark"] .settings-accordion { border-color: #2d4050; background: #192632; }
 .app-shell[data-theme="dark"] .settings-accordion > summary { color: #dce6ef; }
 .app-shell[data-theme="dark"] .settings-accordion > summary > small { color: #9bacbc; }
 .app-shell[data-theme="dark"] .settings-accordion[open] > summary { border-color: #2d4050; }
-.app-shell[data-theme="dark"] .sync-account-card { border-color: #2d4050; background: #192632; }
-.app-shell[data-theme="dark"] .sync-account-heading h2,
-.app-shell[data-theme="dark"] .sync-account-email { color: #dce6ef; }
-.app-shell[data-theme="dark"] .sync-account-heading p,
-.app-shell[data-theme="dark"] .sync-account-note { color: #9bacbc; }
-.app-shell[data-theme="dark"] .sync-account-field input,
-.app-shell[data-theme="dark"] .sync-login > label input { border-color: #344555; color: #dce6ef; background: #202e3b; }
 .select-wrap { display: flex; align-items: center; gap: 5px; height: 38px; padding-inline: 10px; border: 1px solid #dfe6ed; border-radius: 9px; color: #8190a0; }
 .select-wrap select, .plain-select { min-height: 36px; padding: 0 9px; border: 1px solid #dfe6ed; border-radius: 9px; color: #50667a; background-color: #fff; font-size: 12px; }
 .select-wrap select { min-height: initial; padding: 0; border: 0; outline: 0; }
@@ -485,8 +461,6 @@ button, select { cursor: pointer; }
   .settings-accordion > summary { grid-template-columns: minmax(0,1fr) 18px; gap: 4px 10px; padding-inline: 13px; }
   .settings-accordion > summary > small { grid-column: 1; grid-row: 2; }
   .settings-accordion > summary > svg { grid-column: 2; grid-row: 1 / span 2; }
-  .sync-account-card { grid-template-columns: 1fr; padding: 14px; }
-  .sync-account-card > .secondary-button { width: 100%; justify-content: center; }
   .search-field { max-width: none; flex-basis: 100%; }
   .date-filter-row { padding-inline: 12px; }
   .active-filter-chips { padding-inline: 12px; }
@@ -1049,13 +1023,13 @@ button, select { cursor: pointer; }
   .transactions-card .transaction-table:not(.trash-table) .transaction-row {
     position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     grid-template-areas:
-      "amount type"
-      "description description"
-      "date date"
-      "category stage"
-      "actions actions";
+      "amount amount amount type"
+      "description description description description"
+      "date date date date"
+      "category category stage stage"
+      "actions actions actions actions";
     gap: 9px 12px;
     padding: 13px;
     border: 1px solid var(--surface-border);
@@ -1093,14 +1067,14 @@ button, select { cursor: pointer; }
   }
   .transactions-card .transaction-actions-cell { grid-area: actions; justify-content: flex-end; border-top: 1px solid var(--surface-border) !important; padding-top: 4px !important; }
   .transactions-card .transaction-actions-cell .row-open { width: 36px; height: 36px; }
-  .transactions-card .selectable-table .transaction-row {
+  .transactions-card .transaction-table.selectable-table .transaction-row {
     grid-template-areas:
-      "selection selection"
-      "amount type"
-      "description description"
-      "date date"
-      "category stage"
-      "actions actions";
+      "selection selection selection selection"
+      "amount amount amount type"
+      "description description description description"
+      "date date date date"
+      "category category stage stage"
+      "actions actions actions actions";
   }
   .transactions-card .selectable-table .transaction-row .selection-cell {
     grid-area: selection;
@@ -1351,8 +1325,7 @@ button, select { cursor: pointer; }
   .report-filter,
   .statement-filter,
   .settings-accordion,
-  .font-settings-section,
-  .sync-account-card { min-width: 0; }
+  .font-settings-section { min-width: 0; }
   .page-heading { gap: 10px; margin-bottom: 16px; }
   .page-heading > div { min-width: 0; }
   .page-heading h1 { overflow-wrap: anywhere; }
@@ -1401,13 +1374,13 @@ button, select { cursor: pointer; }
   .transaction-table .transaction-row,
   .transaction-table.trash-table .transaction-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     grid-template-areas:
-      "amount type"
-      "description description"
-      "date date"
-      "category stage"
-      "actions actions";
+      "amount amount amount type"
+      "description description description description"
+      "date date date date"
+      "category category stage stage"
+      "actions actions actions actions";
     align-items: center;
     gap: 9px 12px;
     min-width: 0;
@@ -1437,6 +1410,16 @@ button, select { cursor: pointer; }
   .transaction-table .transaction-date-cell { grid-area: date; justify-content: flex-start; }
   .transaction-table .transaction-category-cell { grid-area: category; }
   .transaction-table .transaction-stage-cell { grid-area: stage; }
+  .transaction-table .transaction-row td:is(.transaction-category-cell, .transaction-stage-cell),
+  .transactions-card .transaction-table .transaction-row td:is(.transaction-category-cell, .transaction-stage-cell) {
+    display: block;
+  }
+  .transaction-table .transaction-category-cell::before,
+  .transaction-table .transaction-stage-cell::before {
+    display: block;
+    margin-inline-end: 0;
+    margin-block-end: 3px;
+  }
   .transaction-table .transaction-date-cell::before,
   .transaction-table .transaction-category-cell::before,
   .transaction-table .transaction-stage-cell::before {
@@ -1457,12 +1440,12 @@ button, select { cursor: pointer; }
   .transaction-table .selectable-table .transaction-row,
   .transaction-table.selectable-table .transaction-row {
     grid-template-areas:
-      "selection selection"
-      "amount type"
-      "description description"
-      "date date"
-      "category stage"
-      "actions actions";
+      "selection selection selection selection"
+      "amount amount amount type"
+      "description description description description"
+      "date date date date"
+      "category category stage stage"
+      "actions actions actions actions";
   }
   .transaction-table.selectable-table .selection-cell {
     grid-area: selection;
@@ -1518,11 +1501,8 @@ button, select { cursor: pointer; }
   .client-add-form { grid-template-columns: minmax(0, 1fr); }
   .client-add-form input,
   .option-add input,
-  .system-name-form input,
-  .sync-account-field input,
-  .sync-login > label input { min-height: 44px; font-size: 16px; }
+  .system-name-form input { min-height: 44px; font-size: 16px; }
   .settings-page .system-name-form input { height: 44px; min-height: 44px; }
-  .sync-account-card > .secondary-button,
   .settings-inline-actions .secondary-button,
   .settings-inline-actions .danger-outline { min-height: 44px; }
   .settings-accordion > summary { min-height: 64px; }
@@ -1556,4 +1536,131 @@ button, select { cursor: pointer; }
   .quick-buttons button { gap: 5px; padding-inline: 6px; font-size: 11px; }
   .report-summary-grid { grid-template-columns: minmax(0, 1fr); }
   .report-summary-grid .summary-tile:last-child { grid-column: auto; }
+}
+
+/* Audit fixes: long ledger labels, narrow totals, and touch-sized controls. */
+@media (min-width: 761px) and (max-width: 1280px) {
+  .toolbar > .transaction-options { flex: 1 1 100%; min-width: 0; max-width: 100%; }
+  .toolbar > .transaction-options > .toolbar-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+  .toolbar > .transaction-options .plain-select { width: 100%; min-width: 0; max-width: 100%; }
+}
+
+@media (max-width: 1024px) {
+  .auth-form input { min-height: 44px; font-size: 16px; }
+  .auth-form .primary-button { min-height: 44px; }
+  .app-shell button,
+  .app-shell summary,
+  .app-shell .primary-button,
+  .app-shell .secondary-button,
+  .app-shell .outline-button,
+  .app-shell .danger-outline { min-height: 44px; }
+  .app-shell .icon-button,
+  .app-shell .row-open { min-width: 44px; min-height: 44px; }
+  .theme-switch { min-height: 44px; padding-block: 7px; }
+  .bottom-nav button { min-height: 44px; font-size: 10px; }
+  .app-shell .form-field input:not([type="file"]),
+  .app-shell .form-field > select,
+  .app-shell .form-field > textarea,
+  .client-add-form input,
+  .option-add input,
+  .system-name-form input,
+  .date-filter-row input,
+  .statement-filter input,
+  .report-filter input { min-height: 44px; font-size: 16px; }
+  .app-shell .form-field input.amount-input { font-size: 17px; }
+  .search-field input,
+  .plain-select,
+  .select-wrap select,
+  .statement-filter select,
+  .report-filter select,
+  .font-select,
+  .dashboard-size-field select { font-size: 16px; }
+}
+
+@media (max-width: 760px) {
+  .summary-tile { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .summary-tile > span { width: 100%; }
+  .summary-tile strong { overflow: visible; flex: 0 0 auto; }
+  .amount-filter-details[open] { display: block; flex: 1 1 100%; min-width: 0; }
+  .amount-filter-details[open] > summary { width: fit-content; }
+  .amount-filter-details[open] .amount-filter-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-block-start: 8px;
+  }
+  .amount-filter-fields > label { display: grid; grid-template-columns: auto minmax(0, 1fr); min-width: 0; }
+  .amount-filter-details[open] input { width: 100%; min-width: 0; }
+}
+
+@media (min-width: 761px) and (max-width: 1023px) {
+  .transaction-table:not(.trash-table) { min-width: 0; }
+}
+
+@media (min-width: 761px) and (max-width: 1180px) {
+  .trash-table { min-width: 0; table-layout: fixed; }
+  .trash-table th,
+  .trash-table td { padding-inline: 8px; overflow-wrap: anywhere; }
+  .trash-table th:nth-child(1) { width: 10%; }
+  .trash-table th:nth-child(2) { width: 20%; }
+  .trash-table th:nth-child(3) { width: 12%; }
+  .trash-table th:nth-child(4) { width: 15%; }
+  .trash-table th:nth-child(5) { width: 16%; }
+  .trash-table th:nth-child(6) { width: 14%; }
+  .trash-table th:nth-child(7) { width: 13%; }
+  .trash-table .date-cell { white-space: normal; }
+  .trash-table .trash-actions { flex-direction: column; align-items: flex-start; }
+  .trash-table .trash-actions button { max-width: 100%; }
+}
+
+@media (max-width: 1024px) {
+  .app-shell button { min-width: 44px; }
+}
+
+.amount-filter-fields { display: flex; flex-wrap: wrap; gap: 6px; }
+.selection-toggle { display: inline-grid; place-items: center; vertical-align: middle; cursor: pointer; }
+@media (max-width: 1024px) {
+  .selection-toggle { min-width: 44px; min-height: 44px; }
+  .transaction-table .selection-cell { width: 44px; padding-inline: 0; }
+}
+
+@media (min-width: 761px) and (max-width: 1280px) {
+  .date-filter-row > .transaction-tools { flex: 1 1 100%; min-width: 0; max-width: 100%; }
+  .transaction-tools-content { min-width: 0; max-width: 100%; }
+}
+@media (min-width: 761px) and (max-width: 1024px) {
+  .transaction-table.selectable-table { min-width: 0; }
+  .selectable-table th,
+  .selectable-table td { padding-inline: 10px; }
+  .selectable-table .selection-count { white-space: normal; }
+}
+@media (max-width: 1024px) {
+  .selection-count { white-space: normal; overflow-wrap: anywhere; }
+}
+
+@media (max-width: 1024px) {
+  .auth-card .primary-button,
+  .auth-card .secondary-button,
+  .auth-card .text-button { min-height: 44px; }
+}
+
+@media (max-width: 760px) {
+  .details-content .dialog-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding-inline: 0;
+  }
+  .details-content .dialog-actions > button {
+    min-width: 0;
+    width: 100%;
+    padding-block: 8px;
+    white-space: normal;
+    line-height: 1.6;
+  }
+  .details-content .dialog-actions > .primary-button:last-child { grid-column: 1 / -1; }
+  .details-content .actions-spacer { display: none; }
 }

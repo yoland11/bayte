@@ -1,0 +1,14 @@
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { readdirSync } from 'node:fs';
+const root = fileURLToPath(new URL('../', import.meta.url));
+const database = process.env.BEITY_TEST_DATABASE_URL;
+if (!database) throw new Error('Set BEITY_TEST_DATABASE_URL to a NEW disposable loopback beity_test_* PostgreSQL database');
+const url = new URL(database);
+if (!['127.0.0.1', 'localhost'].includes(url.hostname) || !/^\/beity_test_[a-z0-9_]+$/.test(url.pathname)) throw new Error('Refusing non-test/non-loopback database');
+const psql = (args) => execFileSync('psql', [database, '-X', '-v', 'ON_ERROR_STOP=1', ...args], { cwd: root, encoding: 'utf8' });
+const count = psql(['-qAt', '-c', "select count(*) from pg_tables where schemaname in ('public','auth','storage')"]);
+if (Number(count.trim()) !== 0) throw new Error('Refusing populated database. Create a NEW disposable test database.');
+psql(['-f', 'tests/integration/bootstrap.sql']);
+for (const migration of readdirSync(root + 'supabase/migrations').filter((f) => f.endsWith('.sql')).sort()) psql(['-f', `supabase/migrations/${migration}`]);
+execFileSync('npm', ['test', '--', 'tests/integration/security.test.ts'], { cwd: root, stdio: 'inherit', env: process.env });

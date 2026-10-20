@@ -1,0 +1,5 @@
+# Test-only fixtures must never become public serverless endpoints.
+api/**/*.test.ts
+tests/
+docs/
+.agents/

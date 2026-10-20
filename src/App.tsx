@@ -1,5 +1,5 @@
+import { createTransactionDraft, SaveConfirmationPendingError, TransactionConflictError } from './lib/transactionSave';
 import { useEffect, useMemo, useState, useLayoutEffect, useRef } from 'react';
-import type { User } from '@supabase/supabase-js';
 import {
   ArrowDownLeft, ArrowUpLeft, ArrowRight, ArchiveRestore, BarChart3, CalendarDays, Check, ChevronDown, CirclePlus, Download,
   FileDown, FileSpreadsheet, Filter, HardHat, Home, ImagePlus, Menu, MoreHorizontal, Pencil,
@@ -7,11 +7,10 @@ import {
 } from 'lucide-react';
 import { createLocalBackup } from './lib/db';
 import { decodeBackup, encodeBackup } from './lib/backup';
-import { verifyAppPin } from './lib/appPin';
-import { clearPinUnlock, ensureCloudUser, isPinUnlockedForUser, savePinUnlock } from './lib/session';
 import { cloudLoadErrorMessage } from './lib/cloudError';
-import { deleteCloudClient, deleteCloudLogo, deleteCloudOption, deleteCloudTransaction, deleteCloudTransactions, getCloudAttachment, importLocalBackup, loadCloudWorkspace, loadFontPreferences, permanentlyDeleteCloudTransaction, permanentlyDeleteCloudTransactions, restoreCloudTransaction, saveCloudClient, saveCloudOption, saveCloudProjectSettings, saveFontPreferences, saveCloudTransaction, uploadCloudLogo } from './lib/cloudData';
-import { requireSupabase, supabase, supabaseConfigured } from './lib/supabase';
+import { CANONICAL_PROJECT_ID, CANONICAL_USER_ID, deleteCloudClient, deleteCloudLogo, deleteCloudOption, deleteCloudTransaction, deleteCloudTransactions, getCloudAttachment, importLocalBackup, loadCloudWorkspace, loadFontPreferences, permanentlyDeleteCloudTransaction, permanentlyDeleteCloudTransactions, restoreCloudTransaction, saveCloudClient, saveCloudOption, saveCloudProjectSettings, saveFontPreferences, saveCloudTransaction, uploadCloudLogo } from './lib/cloudData';
+import { pinSession, protectedFiles, supabase, supabaseConfigured } from './lib/supabase';
+import { createWorkspaceRealtime, supabaseRealtimeTransport } from './lib/workspaceRealtime';
 import { calculateLedgerRows, formatAmount, formatCurrency, normalizeDigits, parseAmount, summarizeTransactions, sumAmounts } from './lib/money';
 import { DEFAULT_FONT_PREFERENCES, FONT_OPTIONS, FONT_PREFERENCES_STORAGE_KEY, fontFamilyFor, parseFontPreferences, type FontPreferences, type FontStyleId } from './lib/fonts';
 import { filterAndSortTransactions, getPeriodBounds, type Period, type TransactionFilters } from './lib/transactions';
@@ -39,6 +38,7 @@ const todayISO = () => {
   const today = new Date();
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 };
+type AppUser = { id: string };
 const formatDate = (date: string) => date ? dateFormatter.format(new Date(`${date}T12:00:00`)) : '—';
 
 function AmountInput({ value, onChange, id = 'amount', onInputRef, invalid = false, describedBy }: { value: string; onChange: (value: string) => void; id?: string; invalid?: boolean; describedBy?: string; onInputRef?: (element: HTMLInputElement | null) => void }) {
@@ -96,64 +96,43 @@ function loadTransactionView(userId: string) {
 }
 
 function App() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [pinUnlocked, setPinUnlocked] = useState(false);
   const [authReady, setAuthReady] = useState(false);
-  const [sessionError, setSessionError] = useState(false);
-  const [sessionRetry, setSessionRetry] = useState(0);
-  const activeUserId = useRef<string | null>(null);
+  const [lockError, setLockError] = useState('');
+  const lock = () => {
+    setUser(null); setPinUnlocked(false); setLockError('');
+    void pinSession.lock().catch(() => setLockError('تم قفل هذا الجهاز، لكن تعذر إنهاء الجلسة في الخادم. اتصل بالإنترنت وأعد المحاولة قبل ترك الجهاز.'));
+  };
+  useEffect(() => pinSession.onLock(() => { setUser(null); setPinUnlocked(false); }), []);
   useEffect(() => {
     if (!supabase) { setAuthReady(true); return; }
     let active = true;
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      const nextUser = session?.user ?? null;
-      const nextUserId = nextUser?.id ?? null;
-      if (activeUserId.current && activeUserId.current !== nextUserId) clearPinUnlock(window.sessionStorage);
-      setPinUnlocked(isPinUnlockedForUser(nextUserId, window.sessionStorage));
-      activeUserId.current = nextUserId;
-      setUser(nextUser);
-    });
     setAuthReady(false);
-    setSessionError(false);
-    void supabase.auth.getSession().then(({ data, error }) => {
+    void pinSession.restore().then((restored) => {
       if (!active) return;
-      if (error) { setSessionError(true); setAuthReady(true); return; }
-      const nextUser = data.session?.user ?? null;
-      activeUserId.current = nextUser?.id ?? null;
-      setUser(nextUser);
-      setPinUnlocked(isPinUnlockedForUser(nextUser?.id ?? null, window.sessionStorage));
+      setUser(restored ? { id: CANONICAL_USER_ID } : null);
+      setPinUnlocked(restored);
       setAuthReady(true);
     }).catch(() => {
-      if (active) { setSessionError(true); setAuthReady(true); }
+      if (active) { setUser(null); setPinUnlocked(false); setAuthReady(true); }
     });
-    return () => { active = false; listener.subscription.unsubscribe(); };
-  }, [sessionRetry]);
+    return () => { active = false; };
+  }, []);
+  const unlock = async (pin: string) => {
+    await pinSession.login(pin);
+    if (!pinSession.accessToken()) throw new Error('session-locked');
+    setLockError('');
+    setUser({ id: CANONICAL_USER_ID });
+    setPinUnlocked(true);
+  };
   if (!authReady) return <GateShell><p>جارٍ التحقق من الجلسة…</p></GateShell>;
   if (!supabaseConfigured) return <SetupGate />;
-  if (sessionError && !user) return <GateShell><h1>تعذر التحقق من الجلسة</h1><p>تحقق من الاتصال ثم أعد المحاولة.</p><button className="primary-button" onClick={() => { setAuthReady(false); setSessionRetry((value) => value + 1); }}>إعادة المحاولة</button></GateShell>;
-  const unlock = async () => {
-    let nextUser = user;
-    if (!user) {
-      nextUser = await ensureCloudUser(requireSupabase().auth);
-      activeUserId.current = nextUser.id;
-      setUser(nextUser);
-    }
-    if (nextUser) savePinUnlock(nextUser.id, window.sessionStorage);
-    setPinUnlocked(true);
-  };
-  const signInToSyncAccount = async (email: string, password: string) => {
-    const { data, error } = await requireSupabase().auth.signInWithPassword({ email, password });
-    if (error) throw error;
-    if (!data.user) throw new Error('تعذر فتح حساب المزامنة');
-    activeUserId.current = data.user.id;
-    setUser(data.user);
-    setPinUnlocked(true);
-  };
-  if (!pinUnlocked) return <PinGate onUnlock={unlock} onSignIn={signInToSyncAccount} defaultAccountOpen={!user || !!user.is_anonymous} />;
-  return <TrackerApp user={user!} onLock={() => { clearPinUnlock(window.sessionStorage); setPinUnlocked(false); }} />;
+  if (!pinUnlocked) return <PinGate onUnlock={unlock} externalError={lockError} />;
+  return <TrackerApp user={user!} onLock={lock} />;
 }
 
-function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
+function TrackerApp({ user, onLock }: { user: AppUser; onLock: () => void }) {
   const savedTransactionView = useMemo(() => loadTransactionView(user.id), [user.id]);
   const [darkMode, setDarkMode] = useState(() => {
     try { return window.localStorage.getItem('beity-theme') === 'dark'; }
@@ -167,27 +146,47 @@ function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
   const [projectId, setProjectId] = useState('');
   const [projectName, setProjectName] = useState('بيتي');
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  useEffect(() => () => { if(logoUrl) protectedFiles.release(logoUrl); }, [logoUrl]);
   const [dashboardOrder, setDashboardOrder] = useState<DashboardCard[]>(['balance', 'income', 'expense']);
   const [dashboardSize, setDashboardSize] = useState<'compact' | 'normal' | 'large'>('normal');
   const [dataLoading, setDataLoading] = useState(true);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [dataError, setDataError] = useState('');
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
-  const refreshCloudData = async () => {
+  const mounted = useRef(true);
+  const readSequence = useRef(0);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; ++readSequence.current; };
+  }, []);
+  const refreshCloudData = async (isCurrent: () => boolean = () => true) => {
+    const token = pinSession.accessToken();
+    if (!mounted.current || !token || !isCurrent()) return;
+    const request = ++readSequence.current;
+    const current = () => mounted.current && request === readSequence.current && pinSession.accessToken() === token && isCurrent();
     setDataLoading(true); setDataError('');
     try {
-      const data = await loadCloudWorkspace(user);
+      const [data, savedFonts] = await Promise.all([loadCloudWorkspace(user), loadFontPreferences(user.id)]);
+      if (!current()) { if(data.logoUrl) protectedFiles.release(data.logoUrl); return; }
       setProjectId(data.projectId); setTransactions(data.transactions); setTrashedTransactions(data.trashedTransactions); setClients(data.clients); setCategories(data.categories); setStages(data.stages);
       setProjectName(data.projectName); setLogoUrl(data.logoUrl); setDashboardOrder(arrangeDashboardCards(data.dashboardOrder, ['balance', 'income', 'expense'])); setDashboardSize(data.dashboardSize);
+      if (savedFonts) setFontPreferences(parseFontPreferences(JSON.stringify(savedFonts)));
     } catch (error) {
-      console.error(error); setDataError(cloudLoadErrorMessage(error));
-    } finally { setDataLoading(false); setDataLoaded(true); }
+      if (current()) { console.error(error); setDataError(cloudLoadErrorMessage(error)); }
+    } finally { if (current()) { setDataLoading(false); setDataLoaded(true); } }
   };
-  useEffect(() => { void refreshCloudData(); }, [user.id]);
+  const refreshRef = useRef(refreshCloudData);
+  refreshRef.current = refreshCloudData;
   useEffect(() => {
-    const update = () => { setIsOnline(navigator.onLine); if (navigator.onLine) void refreshCloudData(); };
-    window.addEventListener('online', update); window.addEventListener('offline', update); window.addEventListener('focus', update);
-    return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update); window.removeEventListener('focus', update); };
+    if (!supabase) return;
+    const realtime = createWorkspaceRealtime({
+      transport: supabaseRealtimeTransport(supabase, CANONICAL_PROJECT_ID, user.id),
+      session: pinSession,
+      refetch: current => refreshRef.current(current),
+      onOnlineChange: setIsOnline
+    });
+    realtime.start();
+    return () => realtime.stop();
   }, [user.id]);
   const [page, setPage] = useState<Page>('home');
   const [dialog, setDialog] = useState<{ mode: 'create' | 'edit' | 'detail' | 'duplicate'; record?: Transaction; type?: TransactionType } | null>(null);
@@ -208,14 +207,6 @@ function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
     try { return parseFontPreferences(window.localStorage.getItem(FONT_PREFERENCES_STORAGE_KEY)); }
     catch { return DEFAULT_FONT_PREFERENCES; }
   });
-
-  useEffect(() => {
-    let active = true;
-    void loadFontPreferences(user.id).then((saved) => {
-      if (active && saved) setFontPreferences(parseFontPreferences(JSON.stringify(saved)));
-    }).catch((error) => console.error(error));
-    return () => { active = false; };
-  }, [user.id]);
 
   function changeFontPreference(role: keyof FontPreferences, font: FontStyleId) {
     const next = { ...fontPreferences, [role]: font };
@@ -462,7 +453,7 @@ function TrackerApp({ user, onLock }: { user: User; onLock: () => void }) {
         <div className="page-heading"><div><p className="eyebrow">السجل المالي</p><h1>العمليات</h1></div><button className="primary-button" onClick={() => showCreate()}><Plus size={17} />إضافة عملية</button></div>
         <section className={`content-card transactions-card${compactTransactions ? ' compact-transactions' : ''}`}><div className="toolbar"><label className="search-field"><Search size={17} /><input ref={searchInputRef} value={filters.query} onChange={(e) => setFilters({ ...filters, query: normalizeDigits(e.target.value) })} placeholder="بحث بالبيان أو الشخص أو الملاحظات · / أو ⌘K" aria-label="بحث في العمليات" />{filters.query && <button className="search-clear" onClick={() => setFilters((current) => ({ ...current, query: '' }))} aria-label="مسح البحث"><X size={15} /></button>}</label><div className="toolbar-filters"><label className="select-wrap"><Filter size={16} /><select aria-label="تصفية حسب النوع" value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value as TransactionFilters['type'] })}><option value="all">كل العمليات</option><option value="income">قبض</option><option value="expense">صرف</option></select></label></div><details className="transaction-options"><summary><SlidersHorizontal size={15} />تصفية وترتيب</summary><div className="toolbar-filters"><select className="plain-select" aria-label="تصفية حسب التصنيف" value={filters.categoryId ?? ''} onChange={(e) => setFilters({ ...filters, categoryId: e.target.value || undefined })}><option value="">كل التصنيفات</option>{categories.map((item) => <option key={item.id} value={item.id}>{normalizeDigits(item.name)}</option>)}</select><select className="plain-select" aria-label="تصفية حسب المرحلة" value={filters.stageId ?? ''} onChange={(e) => setFilters({ ...filters, stageId: e.target.value || undefined })}><option value="">كل المراحل</option>{stages.map((item) => <option key={item.id} value={item.id}>{normalizeDigits(item.name)}</option>)}</select><select className="plain-select" aria-label="تصفية حسب العميل" value={filters.clientId ?? ''} onChange={(e) => setFilters({ ...filters, clientId: e.target.value || undefined })}><option value="">كل العملاء</option>{clients.map((item) => <option key={item.id} value={item.id}>{normalizeDigits(item.name)}</option>)}</select><select className="plain-select sort-select" aria-label="ترتيب العمليات" value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value as TransactionFilters['sort'] })}><option value="newest">الأحدث</option><option value="oldest">الأقدم</option><option value="highest">الأعلى مبلغاً</option><option value="lowest">الأقل مبلغاً</option></select></div></details></div>
         <div className="date-filter-row"><span>الفترة</span><select className="plain-select" aria-label="فترة العمليات" value={period} onChange={(e) => { const next = e.target.value as Period; const bounds = getPeriodBounds(next, new Date(), periodFrom, periodTo); setPeriod(next); setFilters((current) => ({ ...current, ...bounds, from: bounds.from, to: bounds.to })); }}>{(['all', 'today', 'week', 'month', 'year', 'custom'] as Period[]).map((key) => <option key={key} value={key}>{({ all: 'كل الفترات', today: 'اليوم', week: 'هذا الأسبوع', month: 'هذا الشهر', year: 'هذه السنة', custom: 'نطاق مخصص' })[key]}</option>)}</select>{period === 'custom' && <><label>من<input type="date" lang="en" dir="ltr" value={periodFrom} onChange={(e) => { const value = normalizeDigits(e.target.value); setPeriodFrom(value); setFilters((current) => ({ ...current, ...getPeriodBounds('custom', new Date(), value, periodTo) })); }} /></label><label>إلى<input type="date" lang="en" dir="ltr" value={periodTo} onChange={(e) => { const value = normalizeDigits(e.target.value); setPeriodTo(value); setFilters((current) => ({ ...current, ...getPeriodBounds('custom', new Date(), periodFrom, value) })); }} /></label></>}
-          <details className="amount-filter-details"><summary><SlidersHorizontal size={14} />المبلغ</summary><label>من<input inputMode="numeric" dir="ltr" placeholder="0" value={filters.minAmount ?? ''} onChange={(e) => setFilters((current) => ({ ...current, minAmount: normalizeDigits(e.target.value).replace(/[^0-9]/g, '') || undefined }))} /></label><label>إلى<input inputMode="numeric" dir="ltr" placeholder="—" value={filters.maxAmount ?? ''} onChange={(e) => setFilters((current) => ({ ...current, maxAmount: normalizeDigits(e.target.value).replace(/[^0-9]/g, '') || undefined }))} /></label></details>
+          <details className="amount-filter-details"><summary><SlidersHorizontal size={14} />المبلغ</summary><div className="amount-filter-fields"><label>من<input inputMode="numeric" dir="ltr" placeholder="0" value={filters.minAmount ?? ''} onChange={(e) => setFilters((current) => ({ ...current, minAmount: normalizeDigits(e.target.value).replace(/[^0-9]/g, '') || undefined }))} /></label><label>إلى<input inputMode="numeric" dir="ltr" placeholder="—" value={filters.maxAmount ?? ''} onChange={(e) => setFilters((current) => ({ ...current, maxAmount: normalizeDigits(e.target.value).replace(/[^0-9]/g, '') || undefined }))} /></label></div></details>
           <span className="result-count" role="status">{formatAmount(visibleTransactions.length)} عملية</span><details className="transaction-options transaction-tools"><summary><MoreHorizontal size={15} />أدوات العمليات</summary><div className="transaction-tools-content"><button className="outline-button export-small" disabled={!visibleTransactions.length && !selectionMode} onClick={() => { setSelectionMode((mode) => !mode); if (selectionMode) setSelectedTransactionIds([]); }}><Check size={15} />{selectionMode ? 'إلغاء التحديد' : 'تحديد'}</button>{selectionMode && <><span className="selection-count" role="status">المحدد: {formatAmount(selectedTransactionIds.length)} · قبض {formatAmount(selectedSummary.income)} · صرف {formatAmount(selectedSummary.expenses)}</span><button className="outline-button export-small" disabled={!selectedTransactionIds.length} onClick={() => void copySelectedSummary()}><Copy size={14} />نسخ ملخص المحدد</button><button className="danger-outline export-small" disabled={!selectedTransactionIds.length} onClick={() => void moveSelectedToTrash()}><Trash2 size={15} />مسح المحدد</button></>}<label className="density-toggle"><input type="checkbox" checked={compactTransactions} onChange={(e) => setCompactTransactions(e.target.checked)} />مضغوط</label><button className="outline-button export-small" disabled={!visibleTransactions.length} onClick={exportVisibleCsv}><Download size={14} />CSV</button><button className="outline-button export-small print-control" disabled={!visibleTransactions.length} onClick={() => window.print()}><Printer size={14} />طباعة</button><button className="outline-button export-small" disabled={!!exporting} onClick={() => exportFile('excel', visibleTransactions, transactionExportLabel)}>{exporting === 'excel' ? <><InlineSpinner />جاري الإنشاء…</> : <><FileSpreadsheet size={15} />Excel</>}</button><button className="outline-button export-small" disabled={!!exporting} onClick={() => exportFile('pdf', visibleTransactions, transactionExportLabel, undefined, { title: 'كشف حساب عام', allRecords: transactions, range: { from: filters.from, to: filters.to } })}>{exporting === 'pdf' ? <><InlineSpinner />جاري الإنشاء…</> : <><FileDown size={15} />PDF</>}</button></div></details>
         </div>
         {hasActiveTransactionFilters && <div className="active-filter-chips"><span>التصفية الحالية</span>{filters.query && <button onClick={() => setFilters((current) => ({ ...current, query: '' }))}>بحث: {filters.query}<X size={13} /></button>}{filters.type !== 'all' && <button onClick={() => setFilters((current) => ({ ...current, type: 'all' }))}>{filters.type === 'income' ? 'قبض' : 'صرف'}<X size={13} /></button>}{filters.categoryId && <button onClick={() => setFilters((current) => ({ ...current, categoryId: undefined }))}>{byId.get(filters.categoryId)}<X size={13} /></button>}{filters.stageId && <button onClick={() => setFilters((current) => ({ ...current, stageId: undefined }))}>{stageById.get(filters.stageId)}<X size={13} /></button>}{filters.clientId && <button onClick={() => setFilters((current) => ({ ...current, clientId: undefined }))}>{clientById.get(filters.clientId)}<X size={13} /></button>}{(filters.from || filters.to) && <button onClick={() => { setPeriod('all'); setPeriodFrom(''); setPeriodTo(''); setFilters((current) => ({ ...current, from: undefined, to: undefined })); }}>{({ all: 'كل الفترات', today: 'اليوم', week: 'هذا الأسبوع', month: 'هذا الشهر', year: 'هذه السنة', custom: 'النطاق المخصص' })[period]}<X size={13} /></button>}{filters.minAmount && <button onClick={() => setFilters((current) => ({ ...current, minAmount: undefined }))}>من {filters.minAmount}<X size={13} /></button>}{filters.maxAmount && <button onClick={() => setFilters((current) => ({ ...current, maxAmount: undefined }))}>إلى {filters.maxAmount}<X size={13} /></button>}<button className="clear-all-filters" onClick={resetTransactionFilters}>مسح الكل</button></div>}
@@ -499,34 +490,25 @@ function GateShell({ children }: { children: React.ReactNode }) {
   return <main className="auth-shell" dir="rtl"><section className="auth-card"><div className="auth-brand"><span className="brand-mark"><HardHat size={23} /></span><span><b>بيتي</b><small>متابعة بناء البيت</small></span></div>{children}</section></main>;
 }
 
-function PinGate({ onUnlock, onSignIn, defaultAccountOpen }: { onUnlock: () => Promise<void>; onSignIn: (email: string, password: string) => Promise<void>; defaultAccountOpen: boolean }) {
+function PinGate({ onUnlock, externalError = '' }: { onUnlock: (pin: string) => Promise<void>; externalError?: string }) {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
-  const [accountError, setAccountError] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!verifyAppPin(pin)) { setPin(''); setError('رمز PIN غير صحيح'); return; }
     setBusy(true); setError('');
-    try { await onUnlock(); }
+    try { await onUnlock(normalizeDigits(pin)); }
     catch (cause) {
-      const message = cause instanceof Error ? cause.message.toLowerCase() : '';
-      setError(/anonymous|sign.?up|disabled|not enabled|not allowed/.test(message)
-        ? 'فعّل خيار الجلسات المجهولة في إعدادات Authentication بمشروع Supabase.'
-        : 'تعذر تهيئة جلسة النظام. تحقق من الاتصال ثم أعد المحاولة.');
+      const message = cause instanceof Error ? cause.message : '';
+      setError(message === 'pin-rate-limited'
+        ? 'تم إيقاف المحاولات مؤقتاً. انتظر قليلاً ثم أعد المحاولة.'
+        : message === 'pin-invalid'
+          ? 'رمز PIN غير صحيح.'
+          : 'تعذر الاتصال بالخادم. تحقق من الإنترنت ثم أعد المحاولة.');
       setPin('');
     } finally { setBusy(false); }
   }
-  async function submitSyncAccount() {
-    if (!verifyAppPin(pin)) { setError('أدخل PIN الصحيح أولاً'); setPin(''); return; }
-    setBusy(true); setAccountError('');
-    try { await onSignIn(email.trim(), password); }
-    catch { setAccountError('تعذر ربط الجهاز. تأكد من البريد وكلمة المرور، وأنك أكدت البريد من الجهاز الذي ربطت عليه الحساب.'); }
-    finally { setBusy(false); }
-  }
-  return <GateShell><h1>أدخل رمز PIN</h1><p>أدخل الرمز لفتح نظام بيتي على هذا الجهاز.</p><form className="auth-form" onSubmit={(event) => void submit(event)}><label>رمز PIN<input autoFocus type="password" inputMode="numeric" autoComplete="current-password" pattern="[0-9٠-٩۰-۹]{4}" maxLength={4} dir="ltr" value={pin} onChange={(event) => { setPin(normalizeDigits(event.target.value).replace(/\D/g, '').slice(0, 4)); setError(''); }} aria-invalid={!!error} required /></label>{error && <p className="error-banner" role="alert">{error}</p>}<button className="primary-button" type="submit" disabled={pin.length !== 4 || busy}>{busy ? <><InlineSpinner />جارٍ فتح النظام…</> : 'فتح النظام'}</button></form><details className="sync-login" open={defaultAccountOpen}><summary>حساب المزامنة المشترك</summary><p>على الهاتف اربط البريد بحساب بياناتك أولاً. على الجهاز الجديد أدخل البريد وكلمة المرور نفسيهما، ثم يبقى PIN للدخول اليومي.</p><label>البريد الإلكتروني<input type="email" autoComplete="username" dir="ltr" value={email} onChange={(event) => { setEmail(event.target.value); setAccountError(''); }} /></label><label>كلمة مرور المزامنة<input type="password" autoComplete="current-password" dir="ltr" value={password} onChange={(event) => { setPassword(event.target.value); setAccountError(''); }} /></label>{accountError && <p className="error-banner" role="alert">{accountError}</p>}<button className="secondary-button" type="button" onClick={() => void submitSyncAccount()} disabled={!email.trim() || !password || pin.length !== 4 || busy}>{busy ? <><InlineSpinner />جارٍ الربط…</> : 'استخدام الحساب المشترك'}</button></details></GateShell>;
+  return <GateShell><h1>أدخل رمز PIN</h1><p>أدخل الرمز لفتح بيانات بيتي السحابية.</p><form className="auth-form" onSubmit={(event) => void submit(event)}><label>رمز PIN<input autoFocus type="password" inputMode="numeric" autoComplete="off" pattern="[0-9٠-٩۰-۹]{4,12}" minLength={4} maxLength={12} dir="ltr" value={pin} onChange={(event) => { setPin(normalizeDigits(event.target.value).replace(/\D/g, '').slice(0, 12)); setError(''); }} aria-invalid={!!(error || externalError)} required /></label>{(error || externalError) && <p className="error-banner" role="alert">{error || externalError}</p>}<button className="primary-button" type="submit" disabled={pin.length < 4 || busy}>{busy ? <><InlineSpinner />جارٍ التحقق…</> : 'فتح النظام'}</button></form></GateShell>;
 }
 
 async function downloadLocalBackup() {
@@ -556,7 +538,7 @@ function SummaryTile({ label, value, kind }: { label: string; value: number; kin
 function TransactionTable({ records, categories, stages, onDetails, emptyText = 'لا توجد عمليات بعد', onAdd, selectable = false, selectedIds = [], onToggleSelection, onSelectVisible, compact = false }: { records: Transaction[]; categories: Map<string, string>; stages: Map<string, string>; onDetails: (record: Transaction) => void; emptyText?: string; onAdd?: () => void; selectable?: boolean; selectedIds?: string[]; onToggleSelection?: (id: string) => void; onSelectVisible?: (selected: boolean) => void; compact?: boolean }) {
   if (records.length === 0) return <div className="table-empty"><div className="empty-icon"><ReceiptText size={25} /></div><b>{emptyText}</b>{onAdd && emptyText === 'لا توجد عمليات بعد' && <button className="text-button" onClick={onAdd}><Plus size={16} />إضافة عملية</button>}</div>;
   const allSelected = records.every((record) => selectedIds.includes(record.id));
-  return <div className="table-scroll"><table className={`transaction-table${selectable ? ' selectable-table' : ''}${compact ? ' dense-table' : ''}`}><thead><tr>{selectable && <th className="selection-cell"><input type="checkbox" checked={allSelected} onChange={(event) => onSelectVisible?.(event.currentTarget.checked)} aria-label="تحديد كل العمليات الظاهرة" /></th>}<th>النوع</th><th>البيان</th><th>التصنيف</th><th>المرحلة</th><th>التاريخ</th><th>المبلغ</th><th><span className="sr-only">تفاصيل</span></th></tr></thead><tbody>{records.map((record) => <tr className="transaction-row" key={record.id}>{selectable && <td className="selection-cell"><input type="checkbox" checked={selectedIds.includes(record.id)} onChange={() => onToggleSelection?.(record.id)} aria-label={`تحديد عملية: ${normalizeDigits(record.description)}`} /></td>}<td className="transaction-type-cell" data-label="النوع"><span className={`type-badge ${record.type}`}><span />{record.type === 'income' ? 'قبض' : 'صرف'}</span></td><td className="transaction-description-cell"><div className="transaction-description">{normalizeDigits(record.description)}{record.attachmentId && <span className="attachment-mark" title="توجد فاتورة أو صورة" aria-label="توجد فاتورة أو صورة"><ImagePlus size={13} /></span>}<small>{normalizeDigits(record.person || 'بدون اسم')}</small></div></td><td className="transaction-category-cell" data-label="التصنيف">{normalizeDigits(categories.get(record.categoryId ?? '') ?? '—')}</td><td className="transaction-stage-cell" data-label="المرحلة">{normalizeDigits(stages.get(record.stageId ?? '') ?? '—')}</td><td className="transaction-date-cell" data-label="التاريخ"><span className="date-cell">{compactDate.format(new Date(`${record.date}T12:00:00`))}</span></td><td className="transaction-amount-cell" data-label="المبلغ"><strong className={`table-amount ${record.type}`} dir="ltr"><bdi>{formatAmount(record.amount)}</bdi><small>د.ع</small></strong></td><td className="transaction-actions-cell"><button className="row-open" onClick={(e) => { e.stopPropagation(); onDetails(record); }} aria-label={`عرض تفاصيل: ${normalizeDigits(record.description)}`}><MoreHorizontal size={18} /></button></td></tr>)}</tbody></table></div>;
+  return <div className="table-scroll"><table className={`transaction-table${selectable ? ' selectable-table' : ''}${compact ? ' dense-table' : ''}`}><thead><tr>{selectable && <th className="selection-cell"><label className="selection-toggle"><input type="checkbox" checked={allSelected} onChange={(event) => onSelectVisible?.(event.currentTarget.checked)} aria-label="تحديد كل العمليات الظاهرة" /></label></th>}<th>النوع</th><th>البيان</th><th>التصنيف</th><th>المرحلة</th><th>التاريخ</th><th>المبلغ</th><th><span className="sr-only">تفاصيل</span></th></tr></thead><tbody>{records.map((record) => <tr className="transaction-row" key={record.id}>{selectable && <td className="selection-cell"><label className="selection-toggle"><input type="checkbox" checked={selectedIds.includes(record.id)} onChange={() => onToggleSelection?.(record.id)} aria-label={`تحديد عملية: ${normalizeDigits(record.description)}`} /></label></td>}<td className="transaction-type-cell" data-label="النوع"><span className={`type-badge ${record.type}`}><span />{record.type === 'income' ? 'قبض' : 'صرف'}</span></td><td className="transaction-description-cell"><div className="transaction-description">{normalizeDigits(record.description)}{record.attachmentId && <span className="attachment-mark" title="توجد فاتورة أو صورة" aria-label="توجد فاتورة أو صورة"><ImagePlus size={13} /></span>}<small>{normalizeDigits(record.person || 'بدون اسم')}</small></div></td><td className="transaction-category-cell" data-label="التصنيف">{normalizeDigits(categories.get(record.categoryId ?? '') ?? '—')}</td><td className="transaction-stage-cell" data-label="المرحلة">{normalizeDigits(stages.get(record.stageId ?? '') ?? '—')}</td><td className="transaction-date-cell" data-label="التاريخ"><span className="date-cell">{compactDate.format(new Date(`${record.date}T12:00:00`))}</span></td><td className="transaction-amount-cell" data-label="المبلغ"><strong className={`table-amount ${record.type}`} dir="ltr"><bdi>{formatAmount(record.amount)}</bdi><small>د.ع</small></strong></td><td className="transaction-actions-cell"><button className="row-open" onClick={(e) => { e.stopPropagation(); onDetails(record); }} aria-label={`عرض تفاصيل: ${normalizeDigits(record.description)}`}><MoreHorizontal size={18} /></button></td></tr>)}</tbody></table></div>;
 }
 
 function EmptyState({ onAdd }: { onAdd: () => void }) { return <div className="dashboard-empty"><div className="empty-icon"><ReceiptText size={24} /></div><b>لا توجد عمليات بعد</b><button className="outline-button" onClick={onAdd}><Plus size={16} />إضافة عملية</button></div>; }
@@ -569,7 +551,7 @@ function ReportBreakdown({ title, options, records, field }: { title: string; op
 
 function TransactionDialog({ mode, record, initialType, categories, stages, clients, user, projectId, onClose, onSaved, onToast, onDeleted, onEdit, onDuplicate }: {
   mode: 'create' | 'edit' | 'detail' | 'duplicate'; record?: Transaction; initialType?: TransactionType; categories: NamedOption[]; stages: NamedOption[]; clients: Client[];
-  user: User; projectId: string;
+  user: AppUser; projectId: string;
   onClose: () => void; onSaved: (message: string) => void; onToast: (message: string) => void; onDeleted: () => void; onEdit: () => void; onDuplicate: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -578,10 +560,12 @@ function TransactionDialog({ mode, record, initialType, categories, stages, clie
   const [storedAttachment, setStoredAttachment] = useState<{ url: string; fileName: string; fileType: string } | null>(null);
   useEffect(() => {
     let active = true;
+    let loadedUrl: string | null = null;
     setStoredAttachment(null);
-    if (record?.attachmentId && mode !== 'duplicate') void getCloudAttachment(record.id).then((attachment) => { if (active) setStoredAttachment(attachment); }).catch((error) => console.error(error));
-    return () => { active = false; };
+    if (record?.attachmentId && mode !== 'duplicate') void getCloudAttachment(record.id).then((attachment) => { loadedUrl=attachment?.url??null; if (active) setStoredAttachment(attachment); else if(loadedUrl) protectedFiles.release(loadedUrl); }).catch((error) => console.error(error));
+    return () => { active = false; if(loadedUrl) protectedFiles.release(loadedUrl); };
   }, [record?.id, record?.attachmentId, mode]);
+  const [draft] = useState(() => createTransactionDraft(mode === 'edit' ? record : undefined));
   const [type, setType] = useState<TransactionType>(record?.type ?? initialType ?? 'expense');
   const [amount, setAmount] = useState(record ? formatAmount(record.amount) : '');
   const [description, setDescription] = useState(normalizeDigits(record?.description ?? ''));
@@ -626,19 +610,20 @@ function TransactionDialog({ mode, record, initialType, categories, stages, clie
     setFieldErrors({}); setBusy(true);
     const now = Date.now();
     const next: Transaction = {
-      id: mode === 'edit' && record ? record.id : crypto.randomUUID(), type, amount: parsedAmount, description: normalizeDigits(description.trim()), date: normalizeDigits(date),
+      id: draft.id, ...(mode === 'edit' && record ? {revision: record.revision} : {}), type, amount: parsedAmount, description: normalizeDigits(description.trim()), date: normalizeDigits(date),
       ...(type === 'expense' && categoryId ? { categoryId } : {}), ...(type === 'expense' && stageId ? { stageId } : {}),
       ...(clientId ? { clientId } : {}),
       ...(person.trim() ? { person: normalizeDigits(person.trim()) } : {}), ...(notes.trim() ? { notes: normalizeDigits(notes.trim()) } : {}),
-      createdAt: mode === 'edit' && record ? record.createdAt : now, updatedAt: now
+      createdAt: draft.createdAt, updatedAt: now
     };
     try {
       if (file && (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.type) || file.size > 10 * 1024 * 1024)) throw new Error('invalid-file');
-      await saveCloudTransaction(user, projectId, next, file, removeFile);
+      const result = await saveCloudTransaction(user, projectId, next, file, removeFile, draft.operationFor(next, file, removeFile));
+      if (result.cleanupPending) { onSaved('تم حفظ العملية والمرفق. تعذر تنظيف الملف السابق وسيحتاج إلى إعادة محاولة.'); return; }
       onSaved(mode === 'edit' ? 'تم تعديل العملية بنجاح' : mode === 'duplicate' ? 'تم نسخ العملية وحفظها' : 'تم حفظ العملية بنجاح');
     } catch (cause) {
       console.error(cause);
-      setError(cause instanceof Error && cause.message === 'invalid-file' ? 'الملف غير مدعوم أو يتجاوز 10 ميغابايت' : file ? 'تعذر رفع المرفق، حاول مرة أخرى' : 'تعذر حفظ العملية، حاول مرة أخرى');
+      setError(cause instanceof TransactionConflictError ? 'تم تعديل العملية من جهاز آخر. أغلق النافذة وافتح العملية مجددًا لمراجعة آخر تحديث قبل الحفظ.' : cause instanceof SaveConfirmationPendingError ? 'تعذر تأكيد الحفظ. أعد المحاولة من هذه النافذة دون إنشاء عملية جديدة لتجنب التكرار.' : cause instanceof Error && cause.message === 'invalid-file' ? 'الملف غير مدعوم أو يتجاوز 10 ميغابايت' : file ? 'تعذر رفع المرفق، حاول مرة أخرى' : 'تعذر حفظ العملية، حاول مرة أخرى');
       setBusy(false);
     }
   }
@@ -698,7 +683,7 @@ function TransactionDialog({ mode, record, initialType, categories, stages, clie
 
 function DetailItem({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) { return <div className={`detail-item ${wide ? 'wide' : ''}`}><span>{label}</span><b>{value}</b></div>; }
 
-function ClientManagementPage({ clients, transactions, user, projectId, onToast, onRefresh }: { clients: Client[]; transactions: Transaction[]; user: User; projectId: string; onToast: (message: string) => void; onRefresh: () => Promise<void> }) {
+function ClientManagementPage({ clients, transactions, user, projectId, onToast, onRefresh }: { clients: Client[]; transactions: Transaction[]; user: AppUser; projectId: string; onToast: (message: string) => void; onRefresh: () => Promise<void> }) {
   return <section className="page-content client-management-page"><div className="page-heading"><div><p className="eyebrow">الأشخاص المرتبطون بالقبض والصرف</p><h1>العملاء</h1><p className="page-subtitle">أضف بيانات العميل وتابع عملياته من كشف الحساب.</p></div><span className="client-page-count">{formatAmount(clients.length)} عميل</span></div><section className="content-card client-management-card"><ClientManager clients={clients} transactions={transactions} user={user} projectId={projectId} onToast={onToast} onRefresh={onRefresh} /></section></section>;
 }
 
@@ -711,38 +696,7 @@ function MoreToolsPage({ trashedCount, onNavigate }: { trashedCount: number; onN
   return <section className="page-content more-tools-page"><div className="page-heading"><div><p className="eyebrow">أدوات النظام</p><h1>المزيد</h1><p className="page-subtitle">الأقسام التي تحتاجها عند المراجعة أو إدارة النظام.</p></div></div><div className="more-tools-grid">{tools.map(({ id, title, description, icon: Icon, count }) => <button className="more-tool-card" key={id} onClick={() => onNavigate(id)}><span className="more-tool-icon"><Icon size={20} /></span><span className="more-tool-copy"><b>{title}</b><small>{description}</small></span>{count !== undefined && <span className="more-tool-count">{formatAmount(count)}</span>}<ArrowRight className="more-tool-arrow" size={17} /></button>)}</div></section>;
 }
 
-function SyncAccountSettings({ user }: { user: User }) {
-  const [email, setEmail] = useState(user.email ?? '');
-  const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
-  useEffect(() => { if (user.email) setEmail(user.email); }, [user.email]);
-  async function sendVerification() {
-    if (!email.trim()) return;
-    setBusy(true); setMessage('');
-    try {
-      const { error } = await requireSupabase().auth.updateUser({ email: email.trim() }, { emailRedirectTo: window.location.origin });
-      if (error) throw error;
-      setMessage('تم إرسال رسالة تأكيد. افتحها على هذا الجهاز، ثم أعد فتح بيتي لإضافة كلمة مرور المزامنة.');
-    } catch {
-      setMessage('تعذر ربط البريد. تحقق من تفعيل ربط الهوية اليدوي في إعدادات Authentication، ثم أعد المحاولة.');
-    } finally { setBusy(false); }
-  }
-  async function savePassword() {
-    if (password.length < 8) { setMessage('اجعل كلمة المرور 8 أحرف أو أكثر.'); return; }
-    setBusy(true); setMessage('');
-    try {
-      const { error } = await requireSupabase().auth.updateUser({ password });
-      if (error) throw error;
-      setPassword(''); setMessage('تم إعداد حساب المزامنة. استخدم البريد وكلمة المرور مرة واحدة على الكمبيوتر، ثم افتح النظام بـ PIN.');
-    } catch {
-      setMessage('تعذر حفظ كلمة المرور. تأكد من تأكيد البريد أولاً ثم أعد المحاولة.');
-    } finally { setBusy(false); }
-  }
-  return <section className="sync-account-card"><div className="sync-account-heading"><div><h2>مزامنة الهاتف والكمبيوتر</h2><p>اربط جلسة هذا الجهاز بالبريد نفسه حتى تظهر العمليات على أجهزتك.</p></div><span className="sync-status-dot" /></div>{user.is_anonymous ? <><label className="sync-account-field">البريد الإلكتروني<input type="email" autoComplete="email" dir="ltr" value={email} onChange={(event) => { setEmail(event.target.value); setMessage(''); }} placeholder="name@example.com" /></label><button className="secondary-button" onClick={() => void sendVerification()} disabled={!email.trim() || busy}>{busy ? <><InlineSpinner />جارٍ الإرسال…</> : 'إرسال رابط التأكيد'}</button><p className="sync-account-note">يُربط البريد بحساب الهاتف الحالي؛ تبقى عملياته وبياناته كما هي. بعد التأكيد أعد فتح بيتي لإضافة كلمة مرور.</p></> : <><p className="sync-account-email">الحساب الموحد: <bdi dir="ltr">{user.email ?? '—'}</bdi></p>{user.email && user.email_confirmed_at ? <><label className="sync-account-field">كلمة مرور المزامنة<input type="password" autoComplete="new-password" minLength={8} dir="ltr" value={password} onChange={(event) => { setPassword(event.target.value); setMessage(''); }} placeholder="8 أحرف أو أكثر" /></label><button className="secondary-button" onClick={() => void savePassword()} disabled={password.length < 8 || busy}>{busy ? <><InlineSpinner />جارٍ الحفظ…</> : 'حفظ كلمة المرور'}</button><p className="sync-account-note">على الكمبيوتر اختر «ربط هذا الجهاز بالحساب المشترك»، أدخل البريد وكلمة المرور وPIN. تُحفظ الجلسة بعدها ويكفي PIN عند الدخول اليومي.</p></> : <p className="sync-account-note">أكد البريد من الرسالة التي وصلتك، ثم أعد فتح النظام لإعداد كلمة المرور.</p>}</>}{message && <p className="sync-account-message" role="status">{message}</p>}</section>;
-}
-
-function SettingsPage({ categories, stages, transactions, projectName, logoUrl, dashboardOrder, dashboardSize, onToast, fontPreferences, onFontPreferenceChange, user, projectId, onRefresh, onProjectName, onLogo, onDashboardOrder, onDashboardSize, onLock }: { categories: NamedOption[]; stages: NamedOption[]; transactions: Transaction[]; projectName: string; logoUrl: string | null; dashboardOrder: DashboardCard[]; dashboardSize: 'compact' | 'normal' | 'large'; onToast: (message: string) => void; fontPreferences: FontPreferences; onFontPreferenceChange: (role: keyof FontPreferences, font: FontStyleId) => void; user: User; projectId: string; onRefresh: () => Promise<void>; onProjectName: (name: string) => void; onLogo: (url: string | null) => void; onDashboardOrder: (order: DashboardCard[]) => void; onDashboardSize: (size: 'compact' | 'normal' | 'large') => void; onLock: () => void }) {
+function SettingsPage({ categories, stages, transactions, projectName, logoUrl, dashboardOrder, dashboardSize, onToast, fontPreferences, onFontPreferenceChange, user, projectId, onRefresh, onProjectName, onLogo, onDashboardOrder, onDashboardSize, onLock }: { categories: NamedOption[]; stages: NamedOption[]; transactions: Transaction[]; projectName: string; logoUrl: string | null; dashboardOrder: DashboardCard[]; dashboardSize: 'compact' | 'normal' | 'large'; onToast: (message: string) => void; fontPreferences: FontPreferences; onFontPreferenceChange: (role: keyof FontPreferences, font: FontStyleId) => void; user: AppUser; projectId: string; onRefresh: () => Promise<void>; onProjectName: (name: string) => void; onLogo: (url: string | null) => void; onDashboardOrder: (order: DashboardCard[]) => void; onDashboardSize: (size: 'compact' | 'normal' | 'large') => void; onLock: () => void }) {
   const [newCategory, setNewCategory] = useState('');
   const [newStage, setNewStage] = useState('');
   const [backupReady, setBackupReady] = useState(false);
@@ -798,15 +752,14 @@ function SettingsPage({ categories, stages, transactions, projectName, logoUrl, 
     } finally { setMigrationBusy(false); if (backupFileRef.current) backupFileRef.current.value = ''; }
   }
   return <section className="page-content settings-page"><div className="page-heading"><div><p className="eyebrow">تهيئة التطبيق</p><h1>الإعدادات</h1><p className="page-subtitle">اسم النظام وشعاره وتصنيفاته ومراحله والنسخ الاحتياطي.</p></div><button className="secondary-button" onClick={onLock}>قفل النظام</button></div>
-    <SyncAccountSettings user={user} />
     <details className="settings-accordion" open><summary><span>لوحة التحكم والمظهر</span><small>اسم النظام والشعار وترتيب بطاقات الرئيسية</small><ChevronDown size={16} /></summary><SystemSettingsPanel projectId={projectId} user={user} projectName={projectName} logoUrl={logoUrl} dashboardOrder={dashboardOrder} dashboardSize={dashboardSize} onToast={onToast} onRefresh={onRefresh} onProjectName={onProjectName} onLogo={onLogo} onDashboardOrder={onDashboardOrder} onDashboardSize={onDashboardSize} /></details>
     <details className="settings-accordion"><summary><span>التصنيفات ومراحل البناء</span><small>{formatAmount(categories.length)} تصنيف · {formatAmount(stages.length)} مراحل</small><ChevronDown size={16} /></summary><div className="settings-grid"><SettingsGroup title="التصنيفات" description="تصنيفات المصاريف المستخدمة" icon={<ReceiptText size={18} />} items={categories} kind="category" newValue={newCategory} onValue={setNewCategory} onAdd={() => void addOption('category')} onRename={renameOption} onDelete={deleteOption} /><SettingsGroup title="مراحل البناء" description="مراحل تنفيذ البيت" icon={<HardHat size={18} />} items={stages} kind="stage" newValue={newStage} onValue={setNewStage} onAdd={() => void addOption('stage')} onRename={renameOption} onDelete={deleteOption} /></div></details>
     <details className="settings-accordion"><summary><span>الخطوط</span><small>تخصيص النصوص الرئيسية والثانوية</small><ChevronDown size={16} /></summary><section className="font-settings-section" aria-labelledby="font-settings-title"><div className="section-header"><div><h2 id="font-settings-title">التحكم بالخطوط</h2><p>اختر خطاً مستقلاً للعناوين وللنصوص المساندة</p></div><span className="font-section-icon" aria-hidden="true">Aa</span></div><div className="font-settings-grid"><FontPicker role="primary" title="النصوص الرئيسية" description="العناوين والأسماء البارزة" value={fontPreferences.primary} onChange={(font) => onFontPreferenceChange('primary', font)} /><FontPicker role="secondary" title="النصوص الثانوية" description="النصوص والوصف والقوائم" value={fontPreferences.secondary} onChange={(font) => onFontPreferenceChange('secondary', font)} /></div><p className="font-note">تعرض المعاينة نماذج رقمية قريبة من أسماء الخطوط التقليدية، وقد يختلف رسم بعض الخطوط عن النسخ الخطية الأصلية.</p></section></details>
-    <details className="settings-accordion"><summary><span>النسخ الاحتياطي ونقل البيانات</span><small>حفظ نسخة أو استيراد بيانات سابقة</small><ChevronDown size={16} /></summary><div className="settings-backup-content"><div className="local-data-note"><span><Wallet size={18} /></span><div><b>نقل البيانات المحلية إلى الحساب السحابي</b><p>نزّل نسخة JSON تشمل العمليات والتصنيفات والمراحل والمرفقات، ثم استوردها. تبقى بيانات المتصفح محفوظة بعد النقل.</p><div className="migration-actions"><button className="secondary-button" onClick={() => void createBackup()} disabled={migrationBusy}><Download size={16} />تنزيل النسخة الاحتياطية</button><input ref={backupFileRef} type="file" accept="application/json,.json" onChange={(event) => void importBackup(event.target.files?.[0])} disabled={migrationBusy} aria-label="اختيار نسخة احتياطية للاستيراد" /><button className="primary-button" onClick={() => backupFileRef.current?.click()} disabled={migrationBusy || !backupReady}>{migrationBusy ? <><InlineSpinner />جارٍ النقل…</> : 'استيراد النسخة إلى الحساب'}</button></div>{migrationMessage && <p role="status">{migrationMessage}</p>}</div></div><p className="gate-hint">الحساب: <bdi dir="ltr">{user.is_anonymous ? 'جلسة PIN لهذا الجهاز' : user.email ?? 'حساب مرتبط'}</bdi> · البيانات الحالية محفوظة في Supabase.</p></div></details></section>;
+    <details className="settings-accordion"><summary><span>النسخ الاحتياطي ونقل البيانات</span><small>حفظ نسخة أو استيراد بيانات سابقة</small><ChevronDown size={16} /></summary><div className="settings-backup-content"><div className="local-data-note"><span><Wallet size={18} /></span><div><b>نقل البيانات المحلية إلى الحساب السحابي</b><p>نزّل نسخة JSON تشمل العمليات والتصنيفات والمراحل والمرفقات، ثم استوردها. تبقى بيانات المتصفح محفوظة بعد النقل.</p><div className="migration-actions"><button className="secondary-button" onClick={() => void createBackup()} disabled={migrationBusy}><Download size={16} />تنزيل النسخة الاحتياطية</button><input ref={backupFileRef} type="file" accept="application/json,.json" onChange={(event) => void importBackup(event.target.files?.[0])} disabled={migrationBusy} aria-label="اختيار نسخة احتياطية للاستيراد" /><button className="primary-button" onClick={() => backupFileRef.current?.click()} disabled={migrationBusy || !backupReady}>{migrationBusy ? <><InlineSpinner />جارٍ النقل…</> : 'استيراد النسخة إلى الحساب'}</button></div>{migrationMessage && <p role="status">{migrationMessage}</p>}</div></div><p className="gate-hint">الدخول برمز PIN فقط · بيانات هذا النظام محفوظة في مساحة سحابية مشتركة.</p></div></details></section>;
 }
 
 function SystemSettingsPanel({ projectId, user, projectName, logoUrl, dashboardOrder, dashboardSize, onToast, onRefresh, onProjectName, onLogo, onDashboardOrder, onDashboardSize }: {
-  projectId: string; user: User; projectName: string; logoUrl: string | null; dashboardOrder: DashboardCard[]; dashboardSize: 'compact' | 'normal' | 'large';
+  projectId: string; user: AppUser; projectName: string; logoUrl: string | null; dashboardOrder: DashboardCard[]; dashboardSize: 'compact' | 'normal' | 'large';
   onToast: (message: string) => void; onRefresh: () => Promise<void>; onProjectName: (name: string) => void; onLogo: (url: string | null) => void; onDashboardOrder: (order: DashboardCard[]) => void; onDashboardSize: (size: 'compact' | 'normal' | 'large') => void;
 }) {
   const [name, setName] = useState(projectName);
@@ -833,8 +786,9 @@ function SystemSettingsPanel({ projectId, user, projectName, logoUrl, dashboardO
   async function uploadLogo(file?: File) {
     if (!file) return;
     setBusy(true);
-    try { await uploadCloudLogo(user.id, projectId, file); await onRefresh(); onToast('تم تحديث شعار النظام'); }
-    catch (error) { onToast(error instanceof Error && error.message === 'logo-invalid' ? 'اختر شعاراً بصيغة PNG أو JPG أو WebP أو SVG وبحجم لا يتجاوز 2 ميغابايت' : 'تعذر رفع الشعار. تحقق من تطبيق ترحيل قاعدة البيانات.'); }
+    let saved = false;
+    try { await uploadCloudLogo(user.id, projectId, file); saved = true; await onRefresh(); onToast('تم تحديث شعار النظام'); }
+    catch (error) { onToast(saved ? 'تم حفظ الشعار. تعذر تحديث العرض؛ حدّث الصفحة.' : error instanceof SaveConfirmationPendingError ? 'تعذر تأكيد حفظ الشعار. تحقق من الاتصال ثم أعد المحاولة.' : error instanceof Error && error.message === 'logo-invalid' ? 'اختر شعاراً بصيغة PNG أو JPG أو WebP أو SVG وبحجم لا يتجاوز 2 ميغابايت' : 'تعذر رفع الشعار. تحقق من تطبيق ترحيل قاعدة البيانات.'); }
     finally { setBusy(false); if (logoInput.current) logoInput.current.value = ''; }
   }
   async function removeLogo() {
@@ -854,7 +808,7 @@ function SystemSettingsPanel({ projectId, user, projectName, logoUrl, dashboardO
   </section>;
 }
 
-function ClientManager({ clients, transactions, user, projectId, onToast, onRefresh }: { clients: Client[]; transactions: Transaction[]; user: User; projectId: string; onToast: (message: string) => void; onRefresh: () => Promise<void> }) {
+function ClientManager({ clients, transactions, user, projectId, onToast, onRefresh }: { clients: Client[]; transactions: Transaction[]; user: AppUser; projectId: string; onToast: (message: string) => void; onRefresh: () => Promise<void> }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [profession, setProfession] = useState('');

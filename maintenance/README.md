@@ -1,0 +1,21 @@
+# Independent secure maintenance artifact
+
+This folder builds a static Arabic RTL maintenance page with no JavaScript, authentication, Supabase client, API handlers or financial actions. It can be deployed independently with Node 24; `npm run build` emits only `dist/index.html`.
+
+**A static page alone is not a database write freeze.** The initial production database does not yet have the permanent gate. The following single sequence supersedes the earlier notice-first versus gate-first ambiguity. Every production SQL/configuration/deployment step requires explicit approval; staging tests are authorized.
+
+1. Verify the intended project reference and approval scope. This task permits staging only.
+2. Coordinate active clients and pause privileged/admin/Storage writers. Run `enter-cutover.sql` **before** the five migrations. Its transaction waits for existing writers using table locks; a five-second lock timeout rolls it back. Retry only after investigating/draining the holder. Do not claim a freeze on timeout.
+3. Confirm the 24 temporary restrictive policies and seven temporary write-denial triggers exist. The triggers also deny legacy SECURITY DEFINER bootstrap writes that bypass RLS; the legacy bootstrap RPC is revoked. Check rollback-only negative financial and Storage probes, and recheck the unchanged baseline. Do not insert real production money as a smoke test. No stored financial row is rewritten by this operator SQL.
+4. Only after confirmed freeze, promote the independently prepared maintenance deployment in the exact production Vercel project. Never promote a staging Preview into production.
+5. Apply the seven approved candidate migrations in their exact order/hashes while the bootstrap freeze remains active. Run `activate.sql`; require maintenance=true. Verify all permanent restrictive policies exist. Stop on failure; retain the freeze and static fallback.
+6. Run `handoff-cutover.sql`. It refuses to remove temporary policies/triggers unless the permanent gate is active, RLS is enabled and the expected permanent policies exist. Verify authenticated financial/Storage writes remain denied after handoff. Keep privileged writers paused; review/disable new anonymous/public signup only with approval before removing bootstrap guards if it can invoke legacy Auth bootstrap. Ordinary RLS does not constrain privileged Auth/database code.
+7. Test a compatible application read-only with production configuration after approval. Preserve records, RLS, account/PIN and the canonical workspace. Promote that production-target application, then deliberately run `deactivate.sql` to restore authorized writes. Do not remove permanent policies, drop financial tables or alter migration history.
+
+No production activation or deployment is authorized yet. The actual isolated Preview here is evidence of the artifact's deployability, not permission to promote a staging deployment into the production project. A production-compatible fallback must be built in the production Vercel project only after explicit approval, with backend guard activation verified first.
+
+The temporary operator freeze is a separately reviewed security/schema change, not a hidden sixth migration. It is applied only in staging so far. After handoff, the permanent gate denies browser/`authenticated` writes; trusted database administrators/service-role operations remain privileged and must stay paused. New Auth bootstrap must also be controlled operationally/through the approved Auth configuration. Reads remain subject to existing RLS.
+
+For rollback after migrations, activate/retain the permanent gate before promoting the compatible static fallback. If migration application failed before handoff, retain the temporary freeze too. Never return to the old anonymous-auth application or automatically restore a database over newer data. Repair and verify a compatible app, then resume deliberately. Rollback does not require destructive down-migrations.
+
+The fallback returns HTTP 503 for every `/api` path. The PIN client confirms logout only on the real API’s HTTP 204 response. A maintenance page cannot acknowledge revocation; pending logout remains recorded and must complete before session restoration. Browser HTML remains available with HTTP 200 and no-store headers.
