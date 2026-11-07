@@ -1,5 +1,5 @@
 import { createTransactionDraft, SaveConfirmationPendingError, TransactionConflictError } from './lib/transactionSave';
-import { useEffect, useMemo, useState, useLayoutEffect, useRef } from 'react';
+import { useEffect, useMemo, useState, useLayoutEffect, useRef, type ReactNode } from 'react';
 import {
   ArrowDownLeft, ArrowUpLeft, ArrowRight, ArchiveRestore, BarChart3, CalendarDays, Check, ChevronDown, CirclePlus, Download,
   FileDown, FileSpreadsheet, Filter, HardHat, Home, ImagePlus, Menu, MoreHorizontal, Pencil,
@@ -11,7 +11,8 @@ import { cloudLoadErrorMessage } from './lib/cloudError';
 import { CANONICAL_PROJECT_ID, CANONICAL_USER_ID, deleteCloudClient, deleteCloudLogo, deleteCloudOption, deleteCloudTransaction, deleteCloudTransactions, getCloudAttachment, importLocalBackup, loadCloudWorkspace, loadFontPreferences, permanentlyDeleteCloudTransaction, permanentlyDeleteCloudTransactions, restoreCloudTransaction, saveCloudClient, saveCloudOption, saveCloudProjectSettings, saveFontPreferences, saveCloudTransaction, uploadCloudLogo } from './lib/cloudData';
 import { pinSession, protectedFiles, supabase, supabaseConfigured } from './lib/supabase';
 import { createWorkspaceRealtime, supabaseRealtimeTransport } from './lib/workspaceRealtime';
-import { calculateLedgerRows, formatAmount, formatCurrency, normalizeDigits, parseAmount, summarizeTransactions, sumAmounts } from './lib/money';
+import { normalizeAmountGrouping, parseSettlement, settlementAmounts } from './lib/settlement';
+import { calculateLedgerRows, formatAmount, formatCurrency, normalizeDigits, summarizeTransactions, sumAmounts } from './lib/money';
 import { DEFAULT_FONT_PREFERENCES, FONT_OPTIONS, FONT_PREFERENCES_STORAGE_KEY, fontFamilyFor, parseFontPreferences, type FontPreferences, type FontStyleId } from './lib/fonts';
 import { filterAndSortTransactions, getPeriodBounds, type Period, type TransactionFilters } from './lib/transactions';
 import type { Client, NamedOption, Transaction, TransactionType } from './lib/types';
@@ -41,7 +42,7 @@ const todayISO = () => {
 type AppUser = { id: string };
 const formatDate = (date: string) => date ? dateFormatter.format(new Date(`${date}T12:00:00`)) : '—';
 
-function AmountInput({ value, onChange, id = 'amount', onInputRef, invalid = false, describedBy }: { value: string; onChange: (value: string) => void; id?: string; invalid?: boolean; describedBy?: string; onInputRef?: (element: HTMLInputElement | null) => void }) {
+function AmountInput({ value, onChange, id = 'amount', required = true, onInputRef, invalid = false, describedBy }: { value: string; onChange: (value: string) => void; id?: string; required?: boolean; invalid?: boolean; describedBy?: string; onInputRef?: (element: HTMLInputElement | null) => void }) {
   const input = useRef<HTMLInputElement | null>(null);
   const caretDigitIndex = useRef<number | null>(null);
   useLayoutEffect(() => {
@@ -58,13 +59,14 @@ function AmountInput({ value, onChange, id = 'amount', onInputRef, invalid = fal
     caretDigitIndex.current = null;
   }, [value]);
   return <input
-    ref={(element) => { input.current = element; onInputRef?.(element); }} id={id} className="amount-input" inputMode="decimal" autoComplete="off" dir="ltr" required aria-invalid={invalid} aria-describedby={describedBy}
-    value={value} placeholder="0" aria-label="المبلغ بالدينار العراقي"
+    ref={(element) => { input.current = element; onInputRef?.(element); }} id={id} className="amount-input" inputMode="decimal" autoComplete="off" dir="ltr" required={required} aria-invalid={invalid} aria-describedby={describedBy}
+    value={value} placeholder={required ? "0" : "كامل المبلغ"}
     onChange={(event) => {
       const target = event.currentTarget;
       const caret = target.selectionStart ?? target.value.length;
       caretDigitIndex.current = normalizeDigits(target.value.slice(0, caret)).replace(/\D/g, '').length;
-      const normalized = normalizeDigits(target.value).replace(/[,٬\s]/g, '').replace(/٫/g, '.').replace(/[^\d.]/g, '');
+      const normalized = normalizeAmountGrouping(target.value).replace(/[,٬\s]/g, '').replace(/٫/g, '.');
+      if (!/^\d*(?:\.\d{0,2})?$/.test(normalized)) { onChange(normalizeDigits(target.value)); return; }
       const [integer = '', ...rest] = normalized.split('.');
       const decimals = rest.join('').slice(0, 2);
       const grouped = integer ? Number(integer).toLocaleString('ar-IQ-u-nu-latn', { maximumFractionDigits: 0, useGrouping: true }) : '';
@@ -297,21 +299,22 @@ function TrackerApp({ user, onLock }: { user: AppUser; onLock: () => void }) {
         const transactionsSheet = workbook.addWorksheet('العمليات', { views: [{ rightToLeft: true, state: 'frozen', ySplit: 1 }] });
         transactionsSheet.columns = [
           { header: 'النوع', key: 'type', width: 12 }, { header: 'البيان', key: 'description', width: 34 },
-          { header: 'المبلغ', key: 'amount', width: 19 }, { header: 'التاريخ', key: 'date', width: 16 },
+          { header: 'الواصل', key: 'amount', width: 19 }, { header: 'التاريخ', key: 'date', width: 16 },
           { header: 'التصنيف', key: 'category', width: 20 }, { header: 'المرحلة', key: 'stage', width: 22 },
-          { header: 'العميل', key: 'client', width: 20 }, { header: 'المورد / الشخص', key: 'person', width: 24 }, { header: 'الملاحظات', key: 'notes', width: 34 }
+          { header: 'العميل', key: 'client', width: 20 }, { header: 'المورد / الشخص', key: 'person', width: 24 }, { header: 'الملاحظات', key: 'notes', width: 34 },
+          { header: 'المبلغ الكلي', key: 'total', width: 19 }, { header: 'المتبقي', key: 'remaining', width: 19 }
         ];
         transactionsSheet.addRows(records.map((row) => ({
-          type: row.type === 'income' ? 'قبض' : 'صرف', description: normalizeDigits(row.description), amount: row.amount,
+          type: row.type === 'income' ? 'قبض' : 'صرف', description: normalizeDigits(row.description), amount: row.amount, total: settlementAmounts(row).total, remaining: settlementAmounts(row).remaining,
           date: new Date(`${row.date}T12:00:00`), category: normalizeDigits(byId.get(row.categoryId ?? '') ?? ''), stage: normalizeDigits(stageById.get(row.stageId ?? '') ?? ''), client: normalizeDigits(clientById.get(row.clientId ?? '') ?? ''), person: normalizeDigits(row.person ?? ''), notes: normalizeDigits(row.notes ?? '')
         })));
-        transactionsSheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: Math.max(records.length + 1, 1), column: 9 } };
+        transactionsSheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: Math.max(records.length + 1, 1), column: 11 } };
         transactionsSheet.getRow(1).height = 25;
         transactionsSheet.getRow(1).font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FF334E67' } };
         transactionsSheet.eachRow((row) => {
           row.eachCell((cell, columnNumber) => {
-            cell.alignment = { vertical: 'top', horizontal: columnNumber === 3 ? 'left' : 'right', wrapText: true };
-            if (columnNumber === 3 && row.number > 1) cell.numFmt = '[$-409]#,##0.## "د.ع"';
+            cell.alignment = { vertical: 'top', horizontal: [3, 10, 11].includes(columnNumber) ? 'left' : 'right', wrapText: true };
+            if ([3, 10, 11].includes(columnNumber) && row.number > 1) cell.numFmt = '[$-409]#,##0.## "د.ع"';
             if (columnNumber === 4 && row.number > 1) cell.numFmt = '[$-409]yyyy-mm-dd';
             if (row.number > 1) cell.font = { name: 'Arial', size: 10, color: { argb: 'FF354D63' } };
           });
@@ -371,7 +374,7 @@ function TrackerApp({ user, onLock }: { user: AppUser; onLock: () => void }) {
             { name: 'غير محددة', amount: sumAmounts(records.filter((row) => row.type === 'expense' && !row.stageId).map((row) => row.amount)) }
           ].filter((row) => row.amount > 0).sort((a, b) => b.amount - a.amount),
           records: ledger.rows.map(({ transaction, balanceAfter }) => ({
-            description: normalizeDigits(transaction.description),
+            description: normalizeDigits(transaction.description) + (settlementAmounts(transaction).remaining > 0 ? `\nالكلي: ${formatAmount(settlementAmounts(transaction).total)} · المتبقي: ${formatAmount(settlementAmounts(transaction).remaining)}` : ''),
             income: transaction.type === 'income' ? transaction.amount : 0,
             expense: transaction.type === 'expense' ? transaction.amount : 0,
             balance: balanceAfter,
@@ -402,8 +405,8 @@ function TrackerApp({ user, onLock }: { user: AppUser; onLock: () => void }) {
   function exportVisibleCsv() {
     const csvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
     const rows = [
-      ['النوع', 'البيان', 'العميل', 'الشخص', 'التصنيف', 'المرحلة', 'التاريخ', 'المبلغ', 'الملاحظات'],
-      ...visibleTransactions.map((record) => [record.type === 'income' ? 'قبض' : 'صرف', normalizeDigits(record.description), clientById.get(record.clientId ?? '') ?? '', normalizeDigits(record.person ?? ''), byId.get(record.categoryId ?? '') ?? '', stageById.get(record.stageId ?? '') ?? '', record.date, formatAmount(record.amount), normalizeDigits(record.notes ?? '')])
+      ['النوع', 'البيان', 'العميل', 'الشخص', 'التصنيف', 'المرحلة', 'التاريخ', 'الواصل', 'الملاحظات', 'المبلغ الكلي', 'المتبقي'],
+      ...visibleTransactions.map((record) => [record.type === 'income' ? 'قبض' : 'صرف', normalizeDigits(record.description), clientById.get(record.clientId ?? '') ?? '', normalizeDigits(record.person ?? ''), byId.get(record.categoryId ?? '') ?? '', stageById.get(record.stageId ?? '') ?? '', record.date, formatAmount(record.amount), normalizeDigits(record.notes ?? ''), formatAmount(settlementAmounts(record).total), formatAmount(settlementAmounts(record).remaining)])
     ];
     const blob = new Blob([`\uFEFF${rows.map((row) => row.map(csvCell).join(',')).join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob); const link = document.createElement('a');
@@ -538,7 +541,7 @@ function SummaryTile({ label, value, kind }: { label: string; value: number; kin
 function TransactionTable({ records, categories, stages, onDetails, emptyText = 'لا توجد عمليات بعد', onAdd, selectable = false, selectedIds = [], onToggleSelection, onSelectVisible, compact = false }: { records: Transaction[]; categories: Map<string, string>; stages: Map<string, string>; onDetails: (record: Transaction) => void; emptyText?: string; onAdd?: () => void; selectable?: boolean; selectedIds?: string[]; onToggleSelection?: (id: string) => void; onSelectVisible?: (selected: boolean) => void; compact?: boolean }) {
   if (records.length === 0) return <div className="table-empty"><div className="empty-icon"><ReceiptText size={25} /></div><b>{emptyText}</b>{onAdd && emptyText === 'لا توجد عمليات بعد' && <button className="text-button" onClick={onAdd}><Plus size={16} />إضافة عملية</button>}</div>;
   const allSelected = records.every((record) => selectedIds.includes(record.id));
-  return <div className="table-scroll"><table className={`transaction-table${selectable ? ' selectable-table' : ''}${compact ? ' dense-table' : ''}`}><thead><tr>{selectable && <th className="selection-cell"><label className="selection-toggle"><input type="checkbox" checked={allSelected} onChange={(event) => onSelectVisible?.(event.currentTarget.checked)} aria-label="تحديد كل العمليات الظاهرة" /></label></th>}<th>النوع</th><th>البيان</th><th>التصنيف</th><th>المرحلة</th><th>التاريخ</th><th>المبلغ</th><th><span className="sr-only">تفاصيل</span></th></tr></thead><tbody>{records.map((record) => <tr className="transaction-row" key={record.id}>{selectable && <td className="selection-cell"><label className="selection-toggle"><input type="checkbox" checked={selectedIds.includes(record.id)} onChange={() => onToggleSelection?.(record.id)} aria-label={`تحديد عملية: ${normalizeDigits(record.description)}`} /></label></td>}<td className="transaction-type-cell" data-label="النوع"><span className={`type-badge ${record.type}`}><span />{record.type === 'income' ? 'قبض' : 'صرف'}</span></td><td className="transaction-description-cell"><div className="transaction-description">{normalizeDigits(record.description)}{record.attachmentId && <span className="attachment-mark" title="توجد فاتورة أو صورة" aria-label="توجد فاتورة أو صورة"><ImagePlus size={13} /></span>}<small>{normalizeDigits(record.person || 'بدون اسم')}</small></div></td><td className="transaction-category-cell" data-label="التصنيف">{normalizeDigits(categories.get(record.categoryId ?? '') ?? '—')}</td><td className="transaction-stage-cell" data-label="المرحلة">{normalizeDigits(stages.get(record.stageId ?? '') ?? '—')}</td><td className="transaction-date-cell" data-label="التاريخ"><span className="date-cell">{compactDate.format(new Date(`${record.date}T12:00:00`))}</span></td><td className="transaction-amount-cell" data-label="المبلغ"><strong className={`table-amount ${record.type}`} dir="ltr"><bdi>{formatAmount(record.amount)}</bdi><small>د.ع</small></strong></td><td className="transaction-actions-cell"><button className="row-open" onClick={(e) => { e.stopPropagation(); onDetails(record); }} aria-label={`عرض تفاصيل: ${normalizeDigits(record.description)}`}><MoreHorizontal size={18} /></button></td></tr>)}</tbody></table></div>;
+  return <div className="table-scroll"><table className={`transaction-table${selectable ? ' selectable-table' : ''}${compact ? ' dense-table' : ''}`}><thead><tr>{selectable && <th className="selection-cell"><label className="selection-toggle"><input type="checkbox" checked={allSelected} onChange={(event) => onSelectVisible?.(event.currentTarget.checked)} aria-label="تحديد كل العمليات الظاهرة" /></label></th>}<th>النوع</th><th>البيان</th><th>التصنيف</th><th>المرحلة</th><th>التاريخ</th><th>الواصل</th><th><span className="sr-only">تفاصيل</span></th></tr></thead><tbody>{records.map((record) => <tr className="transaction-row" key={record.id}>{selectable && <td className="selection-cell"><label className="selection-toggle"><input type="checkbox" checked={selectedIds.includes(record.id)} onChange={() => onToggleSelection?.(record.id)} aria-label={`تحديد عملية: ${normalizeDigits(record.description)}`} /></label></td>}<td className="transaction-type-cell" data-label="النوع"><span className={`type-badge ${record.type}`}><span />{record.type === 'income' ? 'قبض' : 'صرف'}</span></td><td className="transaction-description-cell"><div className="transaction-description">{normalizeDigits(record.description)}{record.attachmentId && <span className="attachment-mark" title="توجد فاتورة أو صورة" aria-label="توجد فاتورة أو صورة"><ImagePlus size={13} /></span>}<small>{normalizeDigits(record.person || 'بدون اسم')}</small></div></td><td className="transaction-category-cell" data-label="التصنيف">{normalizeDigits(categories.get(record.categoryId ?? '') ?? '—')}</td><td className="transaction-stage-cell" data-label="المرحلة">{normalizeDigits(stages.get(record.stageId ?? '') ?? '—')}</td><td className="transaction-date-cell" data-label="التاريخ"><span className="date-cell">{compactDate.format(new Date(`${record.date}T12:00:00`))}</span></td><td className="transaction-amount-cell" data-label="الواصل"><div className="transaction-settlement"><strong className={`table-amount ${record.type}`} dir="ltr"><bdi>{formatAmount(record.amount)}</bdi><small>د.ع</small></strong>{settlementAmounts(record).remaining > 0 && <div className="settlement-cell"><small>الكلي <bdi dir="ltr">{formatAmount(settlementAmounts(record).total)}</bdi></small><small>المتبقي <bdi dir="ltr">{formatAmount(settlementAmounts(record).remaining)}</bdi></small></div>}</div></td><td className="transaction-actions-cell"><button className="row-open" onClick={(e) => { e.stopPropagation(); onDetails(record); }} aria-label={`عرض تفاصيل: ${normalizeDigits(record.description)}`}><MoreHorizontal size={18} /></button></td></tr>)}</tbody></table></div>;
 }
 
 function EmptyState({ onAdd }: { onAdd: () => void }) { return <div className="dashboard-empty"><div className="empty-icon"><ReceiptText size={24} /></div><b>لا توجد عمليات بعد</b><button className="outline-button" onClick={onAdd}><Plus size={16} />إضافة عملية</button></div>; }
@@ -557,6 +560,7 @@ function TransactionDialog({ mode, record, initialType, categories, stages, clie
   const dialogRef = useRef<HTMLDialogElement>(null);
   const descriptionRef = useRef<HTMLInputElement>(null);
   const amountRef = useRef<HTMLInputElement | null>(null);
+  const paidRef = useRef<HTMLInputElement | null>(null);
   const [storedAttachment, setStoredAttachment] = useState<{ url: string; fileName: string; fileType: string } | null>(null);
   useEffect(() => {
     let active = true;
@@ -567,7 +571,9 @@ function TransactionDialog({ mode, record, initialType, categories, stages, clie
   }, [record?.id, record?.attachmentId, mode]);
   const [draft] = useState(() => createTransactionDraft(mode === 'edit' ? record : undefined));
   const [type, setType] = useState<TransactionType>(record?.type ?? initialType ?? 'expense');
-  const [amount, setAmount] = useState(record ? formatAmount(record.amount) : '');
+  const [amount, setAmount] = useState(record ? formatAmount(settlementAmounts(record).total) : '');
+  const [paid, setPaid] = useState(record && settlementAmounts(record).remaining > 0 ? formatAmount(record.amount) : '');
+  const enteredSettlement = parseSettlement(amount, paid);
   const [description, setDescription] = useState(normalizeDigits(record?.description ?? ''));
   const [date, setDate] = useState(record?.date ?? todayISO());
   const [categoryId, setCategoryId] = useState(record?.categoryId ?? '');
@@ -579,7 +585,7 @@ function TransactionDialog({ mode, record, initialType, categories, stages, clie
   const [file, setFile] = useState<File | null>(null);
   const [removeFile, setRemoveFile] = useState(false);
   const [error, setError] = useState('');
-  const [fieldErrors, setFieldErrors] = useState<{ amount?: string; description?: string; date?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<{ amount?: string; paid?: string; description?: string; date?: string }>({});
   const [busy, setBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const localPreview = useMemo(() => file ? URL.createObjectURL(file) : null, [file]);
@@ -597,20 +603,22 @@ function TransactionDialog({ mode, record, initialType, categories, stages, clie
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError('');
-    const parsedAmount = parseAmount(amount);
+    const parsedTotal = parseSettlement(amount, '');
+    const parsedSettlement = parseSettlement(amount, paid);
     const errors: typeof fieldErrors = {};
-    if (!(parsedAmount > 0)) errors.amount = 'يرجى إدخال المبلغ';
+    if (!parsedTotal) errors.amount = 'يرجى إدخال إجمالي صحيح أكبر من صفر';
+    else if (!parsedSettlement) errors.paid = 'الواصل يجب أن يكون بين صفر والإجمالي';
     if (!description.trim()) errors.description = 'يرجى إدخال البيان';
     if (!date || Number.isNaN(new Date(`${date}T12:00:00`).getTime())) errors.date = 'يرجى إدخال تاريخ صحيح';
-    if (Object.keys(errors).length) {
+    if (!parsedSettlement || Object.keys(errors).length) {
       setFieldErrors(errors);
-      if (errors.amount) amountRef.current?.focus(); else if (errors.description) descriptionRef.current?.focus();
+      if (errors.amount) amountRef.current?.focus(); else if (errors.paid) paidRef.current?.focus(); else if (errors.description) descriptionRef.current?.focus();
       return;
     }
     setFieldErrors({}); setBusy(true);
     const now = Date.now();
     const next: Transaction = {
-      id: draft.id, ...(mode === 'edit' && record ? {revision: record.revision} : {}), type, amount: parsedAmount, description: normalizeDigits(description.trim()), date: normalizeDigits(date),
+      id: draft.id, ...(mode === 'edit' && record ? {revision: record.revision} : {}), type, ...parsedSettlement, description: normalizeDigits(description.trim()), date: normalizeDigits(date),
       ...(type === 'expense' && categoryId ? { categoryId } : {}), ...(type === 'expense' && stageId ? { stageId } : {}),
       ...(clientId ? { clientId } : {}),
       ...(person.trim() ? { person: normalizeDigits(person.trim()) } : {}), ...(notes.trim() ? { notes: normalizeDigits(notes.trim()) } : {}),
@@ -641,7 +649,7 @@ function TransactionDialog({ mode, record, initialType, categories, stages, clie
   async function copyDetails() {
     if (!record) return;
     try {
-      await navigator.clipboard.writeText([record.type === 'income' ? 'قبض' : 'صرف', normalizeDigits(record.description), formatAmount(record.amount), normalizeDigits(record.date), normalizeDigits(record.person ?? '')].filter(Boolean).join(' · '));
+      await navigator.clipboard.writeText([record.type === 'income' ? 'قبض' : 'صرف', normalizeDigits(record.description), `الكلي: ${formatAmount(settlementAmounts(record).total)}`, `الواصل: ${formatAmount(record.amount)}`, `المتبقي: ${formatAmount(settlementAmounts(record).remaining)}`, normalizeDigits(record.date), normalizeDigits(record.person ?? '')].filter(Boolean).join(' · '));
       onToast('تم نسخ تفاصيل العملية');
     } catch { onToast('تعذر نسخ تفاصيل العملية'); }
   }
@@ -649,15 +657,17 @@ function TransactionDialog({ mode, record, initialType, categories, stages, clie
   return <dialog ref={dialogRef} className="transaction-dialog" onCancel={(event) => { event.preventDefault(); close(); }} onClick={(event) => { if (event.target === dialogRef.current) close(); }} aria-labelledby="transaction-dialog-title">
     <div className="dialog-head"><div><span className={`dialog-type-icon ${type}`}>{type === 'income' ? <ArrowDownLeft size={18} /> : <ArrowUpLeft size={18} />}</span><div><h2 id="transaction-dialog-title">{modalTitle}</h2><p>{isDetail ? 'معلومات العملية المالية' : 'أدخل المبلغ والبيان والتاريخ'}</p></div></div><button className="icon-button back-button" onClick={close} aria-label="الرجوع وإغلاق النافذة"><ArrowRight size={19} /></button></div>
     {isDetail && record ? <div className="details-content">
-      <div className={`details-amount ${record.type}`}><span>{record.type === 'income' ? 'مبلغ القبض' : 'مبلغ الصرف'}</span><strong dir="ltr"><bdi>{formatAmount(record.amount)}</bdi><small>د.ع</small></strong></div>
-      <div className="details-grid"><DetailItem label="البيان" value={normalizeDigits(record.description)} /><DetailItem label="التاريخ" value={formatDate(record.date)} /><DetailItem label="العميل" value={normalizeDigits(clients.find((item) => item.id === record.clientId)?.name ?? '—')} /><DetailItem label="التصنيف" value={normalizeDigits(categories.find((item) => item.id === record.categoryId)?.name ?? '—')} /><DetailItem label="المرحلة" value={normalizeDigits(stages.find((item) => item.id === record.stageId)?.name ?? '—')} /><DetailItem label={record.type === 'income' ? 'المصدر / الشخص' : 'المورد / الشخص'} value={normalizeDigits(record.person || '—')} /><DetailItem label="الملاحظات" value={normalizeDigits(record.notes || '—')} wide /></div>
+      <div className={`details-amount ${record.type}`}><span>{record.type === 'income' ? 'الواصل (المقبوض)' : 'الواصل (المدفوع)'}</span><strong dir="ltr"><bdi>{formatAmount(record.amount)}</bdi><small>د.ع</small></strong></div>
+      <div className="details-grid"><DetailItem label="المبلغ الكلي" value={<bdi dir="ltr">{formatCurrency(settlementAmounts(record).total)}</bdi>} /><DetailItem label="المتبقي" value={<bdi dir="ltr">{formatCurrency(settlementAmounts(record).remaining)}</bdi>} /><DetailItem label="البيان" value={normalizeDigits(record.description)} /><DetailItem label="التاريخ" value={formatDate(record.date)} /><DetailItem label="العميل" value={normalizeDigits(clients.find((item) => item.id === record.clientId)?.name ?? '—')} /><DetailItem label="التصنيف" value={normalizeDigits(categories.find((item) => item.id === record.categoryId)?.name ?? '—')} /><DetailItem label="المرحلة" value={normalizeDigits(stages.find((item) => item.id === record.stageId)?.name ?? '—')} /><DetailItem label={record.type === 'income' ? 'المصدر / الشخص' : 'المورد / الشخص'} value={normalizeDigits(record.person || '—')} /><DetailItem label="الملاحظات" value={normalizeDigits(record.notes || '—')} wide /></div>
       {hasAttachment && storedAttachment && <div className="detail-attachment"><span className="field-label">الفاتورة / الصورة</span><a href={storedAttachment.url} target="_blank" rel="noreferrer" className="attachment-preview">{storedAttachment.fileType.startsWith('image/') ? <img src={storedAttachment.url} alt={normalizeDigits(storedAttachment.fileName)} /> : <FileDown size={22} />}<span>{normalizeDigits(storedAttachment.fileName)} <Download size={15} /></span></a></div>}
       <div className="dialog-actions"><button className="danger-outline" onClick={() => void deleteCurrent()} disabled={busy}><Trash2 size={16} />حذف</button><button className="secondary-button" onClick={() => void copyDetails()}><Copy size={15} />نسخ التفاصيل</button><span className="actions-spacer" /><button className="secondary-button" onClick={onClose}>إغلاق</button><button className="secondary-button" onClick={onDuplicate}><Copy size={15} />نسخ كعملية جديدة</button><button className="primary-button" onClick={onEdit}><Pencil size={15} />تعديل</button></div>
     </div> : <form onSubmit={(event) => void submit(event)} noValidate>
       <div className="dialog-body">
         <fieldset className="type-switch"><legend>نوع العملية</legend><button type="button" className={type === 'expense' ? 'selected expense' : ''} onClick={() => setType('expense')}><ArrowUpLeft size={16} />صرف</button><button type="button" className={type === 'income' ? 'selected income' : ''} onClick={() => setType('income')}><ArrowDownLeft size={16} />قبض</button></fieldset>
         <div className="form-grid">
-          <div className="form-field"><label htmlFor="amount">المبلغ <span className="required">*</span></label><div className={`amount-field ${fieldErrors.amount ? 'invalid' : ''}`}><AmountInput id="amount" onInputRef={(element) => { amountRef.current = element; }} invalid={!!fieldErrors.amount} describedBy={fieldErrors.amount ? 'amount-error' : undefined} value={amount} onChange={(value) => { setAmount(value); if (parseAmount(value) > 0) setFieldErrors((old) => ({ ...old, amount: undefined })); }} /><span className="currency-suffix">د.ع</span></div>{fieldErrors.amount && <small className="field-error" id="amount-error">{fieldErrors.amount}</small>}</div>
+          <div className="form-field"><label htmlFor="amount">المبلغ الكلي <span className="required">*</span></label><div className={`amount-field ${fieldErrors.amount ? 'invalid' : ''}`}><AmountInput id="amount" onInputRef={(element) => { amountRef.current = element; }} invalid={!!fieldErrors.amount} describedBy={fieldErrors.amount ? 'amount-error' : undefined} value={amount} onChange={(value) => { setAmount(value); setFieldErrors((old) => ({ ...old, amount: undefined, paid: undefined })); }} /><span className="currency-suffix">د.ع</span></div>{fieldErrors.amount && <small className="field-error" id="amount-error">{fieldErrors.amount}</small>}</div>
+          <div className="form-field"><label htmlFor="paid-amount">{type === 'income' ? 'الواصل (المقبوض)' : 'الواصل (المدفوع)'}</label><div className={`amount-field ${fieldErrors.paid ? 'invalid' : ''}`}><AmountInput id="paid-amount" onInputRef={(element) => { paidRef.current = element; }} required={false} value={paid} onChange={(value) => { setPaid(value); setFieldErrors((old) => ({ ...old, paid: undefined })); }} invalid={!!fieldErrors.paid} describedBy={fieldErrors.paid ? 'paid-error' : 'paid-hint'} /><span className="currency-suffix">د.ع</span></div>{fieldErrors.paid ? <small className="field-error" id="paid-error">{fieldErrors.paid}</small> : <small id="paid-hint">اتركه فارغًا إذا وصل المبلغ كاملًا.</small>}</div>
+          <div className="form-field form-wide"><span className="field-label">المتبقي</span><output htmlFor="amount paid-amount"><bdi dir="ltr">{enteredSettlement ? formatCurrency(settlementAmounts(enteredSettlement).remaining) : '—'}</bdi></output></div>
           <div className="form-field"><label htmlFor="transaction-date">التاريخ <span className="required">*</span></label><input id="transaction-date" type="date" lang="en" dir="ltr" value={date} onChange={(e) => { setDate(normalizeDigits(e.target.value)); setFieldErrors((old) => ({ ...old, date: undefined })); }} aria-invalid={!!fieldErrors.date} />{fieldErrors.date && <small className="field-error">{fieldErrors.date}</small>}</div>
           <div className="form-field form-wide"><label htmlFor="transaction-description">البيان <span className="required">*</span></label><input ref={descriptionRef} id="transaction-description" value={description} onChange={(e) => { setDescription(normalizeDigits(e.target.value)); setFieldErrors((old) => ({ ...old, description: undefined })); }} placeholder={type === 'income' ? 'مثال: دفعة من صاحب البيت' : 'مثال: شراء إسمنت'} aria-invalid={!!fieldErrors.description} />{fieldErrors.description && <small className="field-error">{fieldErrors.description}</small>}</div>
           <details className="optional-transaction-fields form-wide" open={additionalDetailsOpen} onToggle={(event) => setAdditionalDetailsOpen(event.currentTarget.open)}>
@@ -681,7 +691,7 @@ function TransactionDialog({ mode, record, initialType, categories, stages, clie
   </dialog>;
 }
 
-function DetailItem({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) { return <div className={`detail-item ${wide ? 'wide' : ''}`}><span>{label}</span><b>{value}</b></div>; }
+function DetailItem({ label, value, wide = false }: { label: string; value: ReactNode; wide?: boolean }) { return <div className={`detail-item ${wide ? 'wide' : ''}`}><span>{label}</span><b>{value}</b></div>; }
 
 function ClientManagementPage({ clients, transactions, user, projectId, onToast, onRefresh }: { clients: Client[]; transactions: Transaction[]; user: AppUser; projectId: string; onToast: (message: string) => void; onRefresh: () => Promise<void> }) {
   return <section className="page-content client-management-page"><div className="page-heading"><div><p className="eyebrow">الأشخاص المرتبطون بالقبض والصرف</p><h1>العملاء</h1><p className="page-subtitle">أضف بيانات العميل وتابع عملياته من كشف الحساب.</p></div><span className="client-page-count">{formatAmount(clients.length)} عميل</span></div><section className="content-card client-management-card"><ClientManager clients={clients} transactions={transactions} user={user} projectId={projectId} onToast={onToast} onRefresh={onRefresh} /></section></section>;
@@ -876,13 +886,13 @@ function TrashPage({ records, categories, stages, projectId, onToast, onRefresh 
 
 function TrashTable({ records, categories, stages, busyId, onRestore, onDelete }: { records: Transaction[]; categories: Map<string, string>; stages: Map<string, string>; busyId: string; onRestore: (record: Transaction) => void; onDelete: (record: Transaction) => void }) {
   if (!records.length) return <div className="table-empty"><div className="empty-icon"><ArchiveRestore size={24} /></div><b>المهملات فارغة</b><span>أي عملية تحذفها ستظهر هنا ويمكن استعادتها.</span></div>;
-  return <div className="table-scroll"><table className="transaction-table trash-table"><thead><tr><th>النوع</th><th>البيان</th><th>التصنيف</th><th>المرحلة</th><th>التاريخ</th><th>المبلغ</th><th>الإجراءات</th></tr></thead><tbody>{records.map((record) => <tr className="transaction-row" key={record.id}>
+  return <div className="table-scroll"><table className="transaction-table trash-table"><thead><tr><th>النوع</th><th>البيان</th><th>التصنيف</th><th>المرحلة</th><th>التاريخ</th><th>الواصل</th><th>الإجراءات</th></tr></thead><tbody>{records.map((record) => <tr className="transaction-row" key={record.id}>
     <td className="transaction-type-cell" data-label="النوع"><span className={`type-badge ${record.type}`}><span />{record.type === 'income' ? 'قبض' : 'صرف'}</span></td>
     <td className="transaction-description-cell" data-label="البيان"><div className="transaction-description">{normalizeDigits(record.description)}<small>{normalizeDigits(record.person || 'بدون اسم')}</small></div></td>
     <td className="transaction-category-cell" data-label="التصنيف">{normalizeDigits(categories.get(record.categoryId ?? '') ?? '—')}</td>
     <td className="transaction-stage-cell" data-label="المرحلة">{normalizeDigits(stages.get(record.stageId ?? '') ?? '—')}</td>
     <td className="transaction-date-cell date-cell" data-label="التاريخ">{compactDate.format(new Date(`${record.date}T12:00:00`))}</td>
-    <td className="transaction-amount-cell" data-label="المبلغ"><strong className={`table-amount ${record.type}`} dir="ltr"><bdi>{formatAmount(record.amount)}</bdi><small>د.ع</small></strong></td>
+    <td className="transaction-amount-cell" data-label="الواصل"><div className="transaction-settlement"><strong className={`table-amount ${record.type}`} dir="ltr"><bdi>{formatAmount(record.amount)}</bdi><small>د.ع</small></strong>{settlementAmounts(record).remaining > 0 && <div className="settlement-cell"><small>الكلي <bdi dir="ltr">{formatAmount(settlementAmounts(record).total)}</bdi></small><small>المتبقي <bdi dir="ltr">{formatAmount(settlementAmounts(record).remaining)}</bdi></small></div>}</div></td>
     <td className="transaction-actions-cell" data-label="الإجراءات"><div className="trash-actions"><button className="outline-button" disabled={!!busyId} onClick={() => onRestore(record)}><ArchiveRestore size={14} />استعادة</button><button className="danger-outline" disabled={!!busyId} onClick={() => onDelete(record)} aria-label="حذف نهائي">{busyId === record.id ? '...' : <Trash2 size={15} />}</button></div></td>
   </tr>)}</tbody></table></div>;
 }

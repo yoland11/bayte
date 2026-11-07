@@ -11,7 +11,7 @@ type CloudUser = { id: string };
 
 export interface CloudWorkspace { projectId: string; projectName: string; logoUrl: string | null; dashboardOrder: DashboardCard[]; dashboardSize: 'compact' | 'normal' | 'large'; transactions: Transaction[]; trashedTransactions: Transaction[]; clients: Client[]; categories: NamedOption[]; stages: NamedOption[] }
 interface TransactionRow {
-  id: string; type: TransactionType; amount: number | string; description: string; transaction_date: string;
+  id: string; type: TransactionType; amount: number | string; total_amount?: number | string | null; description: string; transaction_date: string;
   category_id: string | null; stage_id: string | null; person_name: string | null; notes: string | null;
   client_id: string | null; deleted_at: string | null; created_at: string; updated_at: string; revision: number;
 }
@@ -23,7 +23,7 @@ interface ProjectRow { id: string; name: string; logo_path: string | null; setti
 const fromIso = (value: string) => new Date(value).getTime();
 const toIso = (value: number) => new Date(value).toISOString();
 const toTransaction = (row: TransactionRow, attachmentId?: string): Transaction => ({
-  id: row.id, revision: row.revision, type: row.type, amount: Number(row.amount), description: row.description, date: row.transaction_date,
+  id: row.id, revision: row.revision, type: row.type, amount: Number(row.amount), ...(row.total_amount != null ? { totalAmount: Number(row.total_amount) } : {}), description: row.description, date: row.transaction_date,
   ...(row.category_id ? { categoryId: row.category_id } : {}), ...(row.stage_id ? { stageId: row.stage_id } : {}),
   ...(row.client_id ? { clientId: row.client_id } : {}),
   ...(row.person_name ? { person: row.person_name } : {}), ...(row.notes ? { notes: row.notes } : {}),
@@ -93,6 +93,7 @@ export async function saveCloudTransaction(user: CloudUser, projectId: string, t
   };
   const row = {
     id: transaction.id, user_id: user.id, project_id: projectId, type: transaction.type, amount: transaction.amount,
+    ...(transaction.totalAmount !== undefined ? { total_amount: transaction.totalAmount } : {}),
     transaction_date: transaction.date, description: transaction.description, category_id: transaction.categoryId ?? null,
     stage_id: transaction.stageId ?? null, client_id: transaction.clientId ?? null, person_name: transaction.person ?? null,
     notes: transaction.notes ?? null, created_at: toIso(transaction.createdAt), expected_revision: transaction.revision ?? null

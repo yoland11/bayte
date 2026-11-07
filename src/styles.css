@@ -1664,3 +1664,8 @@ button, select { cursor: pointer; }
   .details-content .dialog-actions > .primary-button:last-child { grid-column: 1 / -1; }
   .details-content .actions-spacer { display: none; }
 }
+
+.transaction-settlement { min-width: 0; }
+.settlement-cell { display: grid; gap: 2px; margin-block-start: 4px; font-variant-numeric: tabular-nums; }
+.settlement-cell small { font-size: 11px; overflow-wrap: anywhere; }
+.form-field output { font-variant-numeric: tabular-nums; font-weight: 600; }

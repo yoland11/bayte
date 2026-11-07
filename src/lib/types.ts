@@ -4,7 +4,9 @@ export interface Transaction {
   id: string;
   revision?: number;
   type: TransactionType;
+  /** Cash actually paid or received. */
   amount: number;
+  totalAmount?: number;
   description: string;
   date: string;
   categoryId?: string;

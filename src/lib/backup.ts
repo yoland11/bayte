@@ -1,3 +1,4 @@
+import { validSettlement } from './settlement';
 import type { NamedOption, Transaction, StoredAttachment } from './types';
 
 export interface BackupAttachment extends Omit<StoredAttachment, 'blob'> { data: string }
@@ -21,7 +22,7 @@ function isOption(value: unknown): value is NamedOption {
 }
 function isTransaction(value: unknown): value is Transaction {
   return isObject(value) && isId(value.id) && (value.type === 'income' || value.type === 'expense') &&
-    typeof value.amount === 'number' && Number.isFinite(value.amount) && value.amount > 0 && typeof value.description === 'string' &&
+    validSettlement(value.amount, value.totalAmount) && typeof value.description === 'string' &&
     /^\d{4}-\d{2}-\d{2}$/.test(String(value.date)) && isTime(value.createdAt) && isTime(value.updatedAt) &&
     (value.categoryId === undefined || isId(value.categoryId)) && (value.stageId === undefined || isId(value.stageId)) &&
     (value.person === undefined || typeof value.person === 'string') && (value.notes === undefined || typeof value.notes === 'string') &&

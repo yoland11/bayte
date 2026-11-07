@@ -129,4 +129,22 @@ describe.skipIf(!database)('isolated PostgreSQL security integration', () => {
     expect(await sql(`select amount from public.transactions where id='00000000-0000-4000-8000-000000000082';`)).toBe('175000.00');
   });
 
+  it('stores a partial expense and a fully outstanding income without overstating cash', async () => {
+    const expense = { ...tx(crypto.randomUUID()), amount: 500000, total_amount: 1000000 };
+    const income = { ...tx(crypto.randomUUID()), type: 'income', amount: 0, total_amount: 250000 };
+    await sql(claims + save(crypto.randomUUID(), null, expense));
+    await sql(claims + save(crypto.randomUUID(), null, income));
+    expect(await sql(claims + `select amount, total_amount, total_amount-amount from transactions where id='${expense.id}'`)).toBe('500000.00|1000000.00|500000.00');
+    expect(await sql(claims + `select amount, total_amount from transactions where id='${income.id}'`)).toBe('0.00|250000.00');
+    await sql(claims + save(crypto.randomUUID(), null, { ...expense, amount: 1000000, expected_revision: 0 }));
+    expect(await sql(claims + `select total_amount-amount from transactions where id='${expense.id}'`)).toBe('0.00');
+  });
+  it('rejects paying more than the total and rolls back the receipt', async () => {
+    const record = { ...tx(crypto.randomUUID()), amount: 500001, total_amount: 500000 };
+    const operation = crypto.randomUUID();
+    await expect(sql(claims + save(operation, null, record))).rejects.toThrow();
+    expect(await sql(`select count(*) from transactions where id='${record.id}'`)).toBe('0');
+    expect(await sql(`select count(*) from transaction_save_operations where operation_id='${operation}'`)).toBe('0');
+  });
+
 });
